@@ -43,12 +43,12 @@ const secret = () => Schema.string().role('secret').default('')
 
 export const ConfigSchema: Schema<Config> = Schema.object({
   developerTokens: Schema.object({
-    lxns: secret().description('落雪咖啡屋开发者令牌，用于查询成绩并同步 LXNS 曲目与收藏品数据。'),
-  }).description('开发者平台令牌'),
+    lxns: secret().description('LXNS 开发者令牌，用于查询成绩并同步 LXNS 曲目与收藏品数据。'),
+  }).description('开发者令牌'),
   divingFishOAuth: Schema.object({
-    clientId: secret().description('水鱼账号机密客户端 ID。'),
-    clientSecret: secret().description('水鱼账号机密客户端密钥。应用须获批 prober.records.read 和 prober.records.write。'),
-  }).description('水鱼账号 OAuth'),
+    clientId: secret().description('水鱼客户端 ID。'),
+    clientSecret: secret().description('水鱼客户端密钥。'),
+  }).description('水鱼 OAuth 设置'),
   oauth: Schema.object({
     enabled: Schema.boolean().default(false)
       .description('是否启用 LXNS OAuth 用户授权和成绩同步。'),
@@ -104,9 +104,21 @@ export const usage = `
 
 面向 Koishi 的舞萌 DX 功能插件，移植自[可怜BOT](https://github.com/xszqxszq/KarenBot) 的舞萌插件
 
-插件需要配置水鱼账号 OAuth 机密客户端 ID、密钥和已获批的成绩读写权限；落雪仍使用开发者令牌及独立的 OAuth 配置。
+插件需要配置水鱼 OAuth 与LXNS 开发者令牌及 OAuth 配置。
 
-水鱼设备码授权不需要公网回调。使用落雪 OAuth 时，请确保 Koishi 回调地址可从公网访问。
+使用LXNS OAuth 时，请确保 Koishi 回调地址可从公网访问。
 
-申请落雪OAuth客户端时，务必勾选所有应用权限范围，否则落雪查分器可能无法正常使用。
+申请LXNS OAuth客户端时，务必勾选“读取用户信息”与“读取玩家数据”权限，否则落雪查分器可能无法正常使用。
+
+水鱼 Oauth 申请指南：
+- 使用水鱼账号登陆 [开发者控制台](https://auth.diving-fish.com/console)
+- 点击“创建新应用”
+- 填写应用名称（不超过 20 字）、应用描述（不超过 100 字）、主页地址（可留空，如填写须可公开访问）
+- 接入方式选择“Bot/工具”
+- 部署形态选择“由你自己部署运行”
+- 权限选择“读取你在查分器的资料（Rating、姓名框等）”与“读取你的舞萌 DX 成绩”
+- 点击提交，耐心等待审核完成
+- 审核通过后，点击生成client_secret，clint_id在申请完成后仅会显示一次，请务必妥善保管
+- 将申请到的client_secret与client_id填入对应的配置中，即可完成水鱼查分器配置
+
 `.trim()

@@ -5,6 +5,14 @@ import {
   PlateNotAcquiredError,
 } from '../services/setting-service'
 import {
+  createQqButton,
+  createQqButtonRow,
+  createQqCommandAction,
+  createQqKeyboard,
+  createQqNativeMarkdown,
+  createQqUrlAction,
+} from '../platform/qq-message'
+import {
   commandAction,
   createQqCommandGuidance,
   replyText,
@@ -41,14 +49,14 @@ export function createQuerySettingsPanel(state: QuerySettingsPanelState) {
       {
         id: 'query-settings-avatar',
         label: '设置头像',
-        command: '/mai 设置头像 ',
+        command: '/mai 设置头像',
         enter: false,
         reply: false,
       },
       {
         id: 'query-settings-plate',
         label: '设置牌子',
-        command: '/mai 设置牌子 ',
+        command: '/mai 设置牌子',
         enter: false,
         reply: false,
       },
@@ -122,6 +130,42 @@ function providerSelectionGuidance(text: string) {
   ]])
 }
 
+function collectionSettingKeyboard(label: '头像' | '牌子') {
+  const command = `/mai 设置${label}`
+  const listUrl = `https://otmdb.cn/bot/maimai/${label === '头像' ? 'icons' : 'plates'}`
+  return createQqKeyboard([createQqButtonRow([
+    createQqButton(`select-${label}`, `选择${label}`, createQqUrlAction(listUrl)),
+    createQqButton(`set-${label}`, `⚙ 设置${label}`, createQqCommandAction(`${command} `, {
+      unsupportTips: `请在正文命令后补充${label}编号或名称并手动发送。`,
+    })),
+  ])])
+}
+
+async function promptForSettingValue(
+  session: ActiveCommandSession,
+  dependencies: CoreCommandDependencies,
+  label: '头像' | '牌子',
+) {
+  const text = label === '头像'
+    ? '\n使用方法：设置头像 <id/名称>\n\t例：设置头像 106103\n\t例：设置头像 高瀬 梨緒\n\n\t收藏品列表：https://otmdb.cn/bot/maimai/icons'
+    : '\n使用方法：设置牌子/设置姓名框 id/名称\n\t例：设置牌子 100501\n\t例：设置牌子 晓将\n\t例：设置姓名框 7sRefちほー2\n\n\t牌子列表：https://otmdb.cn/bot/maimai/plates'
+  const richText = label === '头像'
+    ? '**设置头像**\n\n使用方法：设置头像 id/名称\n👉设置头像 106103\n👉设置头像 高瀬 梨緒\n \n⏬您可以点击下方按钮查看头像列表。'
+    : '**设置牌子**\n\n使用方法：设置牌子/设置姓名框 id/名称\n👉设置牌子 100501\n👉设置牌子 晓将\n👉设置姓名框 7sRefちほー2\n \n⏬您可以点击下方按钮查看牌子列表。'
+  const rich = createQqNativeMarkdown(richText, collectionSettingKeyboard(label))
+  await replyText(session, dependencies, text, rich)
+}
+
+async function replySettingSuccess(
+  session: ActiveCommandSession,
+  dependencies: CoreCommandDependencies,
+  label: '头像' | '牌子',
+) {
+  const text = `设置${label}成功。`
+  await replyText(session, dependencies, text,
+    createQqNativeMarkdown(`**设置${label}**\n\n${text}`, collectionSettingKeyboard(label)))
+}
+
 function pendingScope(session: ActiveCommandSession) {
   return {
     userId: session.userId,
@@ -143,10 +187,14 @@ async function settingFailure(
   error: unknown,
 ) {
   if (error instanceof PlateNotAcquiredError) {
-    await replyText(session, dependencies, '您尚未达成该牌子的获得条件。')
+    await replyText(session, dependencies, '您未达成该牌子的获得条件。')
     return
   }
   if (error instanceof InvalidSettingError) {
+    if (error.setting === 'avatar' || error.setting === 'plate') {
+      await promptForSettingValue(session, dependencies, error.setting === 'avatar' ? '头像' : '牌子')
+      return
+    }
     await replyText(session, dependencies, '设置失败，请检查输入。')
     return
   }
@@ -240,9 +288,14 @@ export function registerSettingsCommands(
   commands.push(ctx.command('mai.avatar <value:text>', '设置舞萌头像')
     .alias('mai.设置头像')
     .action(commandAction(async ({ session }, value = '') => {
+      const requested = value.trim()
+      if (!requested) {
+        await promptForSettingValue(session, dependencies, '头像')
+        return
+      }
       try {
-        await dependencies.settingService.setAvatar(session.userId, value.trim())
-        await replyText(session, dependencies, '头像设置成功。')
+        await dependencies.settingService.setAvatar(session.userId, requested)
+        await replySettingSuccess(session, dependencies, '头像')
       } catch (error) {
         await settingFailure(session, dependencies, error)
       }
@@ -251,9 +304,14 @@ export function registerSettingsCommands(
   commands.push(ctx.command('mai.plate <value:text>', '设置舞萌牌子或姓名框')
     .alias('mai.设置牌子', 'mai.设置姓名框')
     .action(commandAction(async ({ session }, value = '') => {
+      const requested = value.trim()
+      if (!requested) {
+        await promptForSettingValue(session, dependencies, '牌子')
+        return
+      }
       try {
-        await dependencies.settingService.setPlate(session.userId, value.trim())
-        await replyText(session, dependencies, '牌子设置成功。')
+        await dependencies.settingService.setPlate(session.userId, requested)
+        await replySettingSuccess(session, dependencies, '牌子')
       } catch (error) {
         await settingFailure(session, dependencies, error)
       }

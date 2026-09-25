@@ -574,7 +574,7 @@ export class MaimaiDataSyncService implements MaimaiAssetInvalidationSource {
         try {
           const store = await this.attemptSource('diving-fish', () => this.syncProberSource())
           if (remoteErrors.length) {
-            this.logger.warn('[mai-plugin] LXNS data source is unavailable; using Diving Fish fallback.')
+            this.logger.warn('落雪查分器未配置，将使用水鱼查分器')
           }
           return await this.complete(store)
         } catch (error) {
@@ -594,7 +594,7 @@ export class MaimaiDataSyncService implements MaimaiAssetInvalidationSource {
       const cached = await this.cache.loadSnapshot()
       this.options.debug?.event('data.source.cache', { revision: cached.manifest.revision })
       if (remoteErrors.length) {
-        this.logger.warn(`[mai-plugin] resource synchronization failed; using cached revision ${cached.manifest.revision}`)
+        this.logger.warn(`资源同步失败，使用缓存版本 ${cached.manifest.revision}`)
       }
       return await this.complete(await this.storeFromCache(cached))
     } catch (cacheError) {
@@ -602,7 +602,7 @@ export class MaimaiDataSyncService implements MaimaiAssetInvalidationSource {
         const store = await this.storeBuiltinSource()
         this.options.debug?.event('data.source.builtin', { revision: store.manifest.revision })
         if (remoteErrors.length) {
-          this.logger.warn('[mai-plugin] resource sources are unavailable; using builtin minimum data')
+          this.logger.warn('资源不可用，使用内置最小数据')
         }
         return await this.complete(store)
       } catch (builtinError) {
