@@ -1,6 +1,6 @@
 {
   "name": "koishi-plugin-mai-plugin",
-  "description": "Koishi maimai DX query, rendering, OAuth binding, and guessing plugin.",
+  "description": "适配QQ官机的舞萌DX功能插件",
   "version": "1.1.1",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
