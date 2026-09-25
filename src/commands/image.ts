@@ -148,8 +148,6 @@ function ratingRenderInput(
     newCount,
     rating,
     title: `[${backend}] B${oldCount} ${oldRating} + B${newCount} ${newRating}${coursePart} = ${rating}`,
-    oldLabel: `OLD CHARTS · B${oldCount}`,
-    newLabel: `NEW CHARTS · B${newCount}`,
   }
 }
 
@@ -176,8 +174,10 @@ async function createScoreListPage(
     settings: response.settings,
     oldRecords: pageRecords,
     newRecords: [],
-    oldCount: pageRecords.length,
+    oldCount: SCORE_LIST_PAGE_SIZE,
     newCount: 0,
+    rating: response.player.rating,
+    title: `[${backend}] ${filter.trim() || '全部'}成绩列表 ${currentPage} / ${totalPages}`,
   })
   const text = `${currentPage} / ${totalPages}`
   const row = createPagedCommandButtons({
@@ -395,8 +395,6 @@ export function registerImageCommands(
           newCount: newRecords.length,
           rating: totalRating,
           title: `[${provider.name}] 歌50 ${record.chart.difficulty.brief}${music.id}. ${music.name} × 50 = ${totalRating}`,
-          oldLabel: 'SONG 35',
-          newLabel: 'SONG 15',
         })
         await replyMarkdownImage(session, dependencies, image, {
           alt: 'B50',

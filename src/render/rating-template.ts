@@ -3,7 +3,7 @@ import type { MaimaiDataStore } from '../data/sync-service'
 import { Rate } from '../domain/enums'
 import type { RecordEntry } from '../domain/music'
 import type { PlayerInfo, PlayerSettings } from '../domain/player'
-import { DeluxeScore } from '../domain/rating'
+import { DeluxeScore, Rating } from '../domain/rating'
 import { resolvePackageAssetPath } from './assets'
 import { createContainerNode, createImageNode, createTextNode } from './nodes'
 import type { TakumiRenderService } from './renderer'
@@ -19,8 +19,7 @@ export const MAIMAI_DIFFICULTY_COLORS = Object.freeze({
 } as const)
 
 export type MaimaiDifficultyName = keyof typeof MAIMAI_DIFFICULTY_COLORS
-
-export const RATING_TEMPLATE_SIZE = Object.freeze({ width: 1440, height: 1490 })
+export const RATING_TEMPLATE_SIZE = Object.freeze({ width: 1280, height: 1280 })
 
 export interface RatingRenderInput {
   backend: string
@@ -32,8 +31,6 @@ export interface RatingRenderInput {
   newCount?: number
   rating?: number
   title?: string
-  oldLabel?: string
-  newLabel?: string
 }
 
 export interface RatingRenderPlan {
@@ -42,519 +39,161 @@ export interface RatingRenderPlan {
   height: number
 }
 
-const rateLabels = Object.freeze({
-  sssp: 'SSS+',
-  sss: 'SSS',
-  ssp: 'SS+',
-  ss: 'SS',
-  sp: 'S+',
-  s: 'S',
-  aaa: 'AAA',
-  aa: 'AA',
-  a: 'A',
-  bbb: 'BBB',
-  bb: 'BB',
-  b: 'B',
-  c: 'C',
-  d: 'D',
-} as const)
+const CARD_X = 43
+const CARD_Y = 187
+const CARD_STEP_X = 239
+const CARD_STEP_Y = 94
+const CARD_COLUMNS = 5
+const DIVIDER_HEIGHT = 73
+const FOOTER_Y = 1235
 
-const comboLabels: Readonly<Record<string, string>> = Object.freeze({
-  none: '--',
-  fc: 'FC',
-  fcp: 'FC+',
-  ap: 'AP',
-  app: 'AP+',
-} as const)
-
-const syncLabels: Readonly<Record<string, string>> = Object.freeze({
-  none: '--',
-  fs: 'FS',
-  fsp: 'FS+',
-  fsd: 'FSD',
-  fsdp: 'FSD+',
-  sync: 'SYNC',
-} as const)
-
-function positiveCount(value: number | undefined, fallback: number, name: string) {
+function countOf(value: number | undefined, fallback: number, name: string) {
   const count = value ?? fallback
   if (!Number.isInteger(count) || count < 0) throw new RangeError(`${name} must be a non-negative integer`)
   return count
 }
 
-function difficultyColor(record: RecordEntry) {
-  return MAIMAI_DIFFICULTY_COLORS[record.chart.difficulty.name as MaimaiDifficultyName]
-    ?? MAIMAI_RENDER_THEME.colors.mutedText
-}
-
-function ratingSlotBase(index: number, section: 'old' | 'new', empty: boolean) {
-  return {
-    id: `rating-slot-${section}-${index + 1}`,
-    className: 'rating-slot',
-    attributes: {
-      'data-empty': String(empty),
-      'data-section': section,
-      'data-index': String(index + 1),
-    },
+function textAt(text: string, x: number, y: number, width: number, height: number, fontSize: number, color: string) {
+  return createTextNode({
+    text,
     style: {
-      position: 'relative' as const,
-      width: 268,
-      height: 104,
-      overflow: 'hidden' as const,
-      display: 'flex' as const,
-      flexDirection: 'column' as const,
-      flexShrink: 0,
-      borderRadius: 5,
-      backgroundColor: empty ? '#eaf0f4' : MAIMAI_RENDER_THEME.colors.surface,
-      border: empty ? `1px dashed ${MAIMAI_RENDER_THEME.colors.line}` : `1px solid ${MAIMAI_RENDER_THEME.colors.line}`,
+      position: 'absolute', left: x, top: y, width, height,
+      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+      fontSize, fontWeight: 700, lineHeight: 1.1, color,
     },
-  }
-}
-
-function emptyRatingSlot(index: number, section: 'old' | 'new') {
-  return createContainerNode({
-    ...ratingSlotBase(index, section, true),
-    children: [createContainerNode({
-      style: {
-        width: '100%',
-        height: '100%',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        color: '#9aa3b2',
-      },
-      children: [createTextNode({
-        text: `#${index + 1} EMPTY`,
-        style: { fontSize: 12, fontWeight: 700 },
-      })],
-    })],
   })
 }
 
-async function ratingRecordSlot(
-  index: number,
-  section: 'old' | 'new',
-  record: RecordEntry,
-  renderService: TakumiRenderService,
-  data: MaimaiDataStore,
-) {
-  const color = difficultyColor(record)
-  const cover = await renderService.loadAsset(
-    data.coverPath(record.music.resourceId),
-    resolvePackageAssetPath('fallback/cover.png'),
-  )
-  const stars = DeluxeScore.stars(record.deluxeScore, record.chart.maxDeluxeScore)
-  const type = record.music.type.value
-  const rank = rateLabels[record.rate]
-  const combo = comboLabels[record.comboStatus.value]
-  const sync = syncLabels[record.syncStatus.value]
-
-  return createContainerNode({
-    ...ratingSlotBase(index, section, false),
-    style: {
-      ...ratingSlotBase(index, section, false).style,
-      border: `2px solid ${color}`,
-    },
-    attributes: {
-      ...ratingSlotBase(index, section, false).attributes,
-      'data-difficulty': record.chart.difficulty.name,
-    },
-    children: [
-      createImageNode({
-        src: cover,
-        width: 264,
-        height: 46,
-        style: { width: 264, height: 46, objectFit: 'cover', flexShrink: 0 },
-      }),
-      createContainerNode({
-        style: {
-          position: 'absolute',
-          left: 4,
-          top: 4,
-          height: 17,
-          paddingLeft: 5,
-          paddingRight: 5,
-          display: 'flex',
-          alignItems: 'center',
-          borderRadius: 2,
-          backgroundColor: 'rgba(38,49,60,0.88)',
-          color: '#ffffff',
-        },
-        children: [createTextNode({
-          text: `#${String(index + 1).padStart(2, '0')} · ${record.music.id}`,
-          style: { fontSize: 9, fontWeight: 700, lineHeight: 1 },
-        })],
-      }),
-      createContainerNode({
-        style: {
-          position: 'absolute',
-          right: 4,
-          top: 4,
-          height: 17,
-          paddingLeft: 5,
-          paddingRight: 5,
-          display: 'flex',
-          alignItems: 'center',
-          borderRadius: 2,
-          backgroundColor: MAIMAI_RENDER_THEME.colors.highlight,
-          color: MAIMAI_RENDER_THEME.colors.text,
-        },
-        children: [createTextNode({
-          text: type,
-          style: { fontSize: 9, fontWeight: 700, lineHeight: 1 },
-        })],
-      }),
-      createContainerNode({
-        style: {
-          width: '100%',
-          height: 54,
-          paddingTop: 3,
-          paddingLeft: 6,
-          paddingRight: 6,
-          paddingBottom: 4,
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-        },
-        children: [
-          createTextNode({
-            text: record.music.name,
-            style: {
-              width: '100%',
-              height: 16,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              fontSize: 11,
-              fontWeight: 700,
-              lineHeight: 1.25,
-              color: MAIMAI_RENDER_THEME.colors.text,
-            },
-          }),
-          createContainerNode({
-            style: {
-              height: 18,
-              display: 'flex',
-              alignItems: 'baseline',
-              justifyContent: 'space-between',
-            },
-            children: [
-              createTextNode({
-                text: Rate.toString(record.achievement),
-                style: { fontSize: 14, fontWeight: 700, color, lineHeight: 1 },
-              }),
-              createTextNode({
-                text: `${record.chart.levelValue.toFixed(1)} -> ${record.rating}`,
-                style: { fontSize: 9, fontWeight: 700, color: MAIMAI_RENDER_THEME.colors.mutedText, lineHeight: 1 },
-              }),
-            ],
-          }),
-          createContainerNode({
-            className: 'rating-status-row',
-            style: {
-              height: 14,
-              display: 'flex',
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              overflow: 'hidden',
-            },
-            children: [
-              createTextNode({
-                text: rank,
-                style: { fontSize: 9, fontWeight: 700, color: MAIMAI_RENDER_THEME.colors.text, lineHeight: 1 },
-              }),
-              createTextNode({
-                text: `${combo} · ${sync} · DX ★${stars}`,
-                style: { fontSize: 8, fontWeight: 700, color: MAIMAI_RENDER_THEME.colors.mutedText, lineHeight: 1 },
-              }),
-            ],
-          }),
-        ],
-      }),
-    ],
+async function artwork(service: TakumiRenderService, name: string, x: number, y: number, width: number, height: number) {
+  const src = await service.loadAsset(resolvePackageAssetPath(`rating/${name}.png`))
+  return createImageNode({
+    src, width, height,
+    style: { position: 'absolute', left: x, top: y, width, height },
   })
 }
 
-async function ratingSection(
-  title: string,
-  section: 'old' | 'new',
-  count: number,
-  records: readonly RecordEntry[],
-  renderService: TakumiRenderService,
-  data: MaimaiDataStore,
-) {
-  const visibleRecords = records.slice(0, count)
-  const slots = await Promise.all(Array.from({ length: count }, (_, index) => {
-    const record = visibleRecords[index]
-    return record
-      ? ratingRecordSlot(index, section, record, renderService, data)
-      : emptyRatingSlot(index, section)
-  }))
-
-  return createContainerNode({
-    id: `rating-section-${section}`,
-    style: { width: '100%', display: 'flex', flexDirection: 'column', gap: 10 },
-    children: [
-      createContainerNode({
-        style: {
-          height: 34,
-          paddingLeft: 10,
-          paddingRight: 10,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          borderLeft: `7px solid ${section === 'old'
-            ? MAIMAI_RENDER_THEME.colors.accent
-            : MAIMAI_RENDER_THEME.colors.secondaryAccent}`,
-          backgroundColor: MAIMAI_RENDER_THEME.colors.surface,
-        },
-        children: [
-          createTextNode({
-            text: title,
-            style: { fontSize: 17, fontWeight: 700, color: MAIMAI_RENDER_THEME.colors.text },
-          }),
-          createTextNode({
-            text: `${visibleRecords.length}/${count}`,
-            style: { fontSize: 12, fontWeight: 700, color: MAIMAI_RENDER_THEME.colors.mutedText },
-          }),
-        ],
-      }),
-      createContainerNode({
-        className: 'rating-grid',
-        style: {
-          width: '100%',
-          display: 'flex',
-          flexDirection: 'row',
-          flexWrap: 'wrap',
-          gap: 10,
-          alignContent: 'flex-start',
-        },
-        children: slots,
-      }),
-    ],
+function imageAt(src: Buffer, x: number, y: number, width: number, height: number) {
+  return createImageNode({
+    src, width, height,
+    style: { position: 'absolute', left: x, top: y, width, height, objectFit: 'cover' },
   })
 }
 
-async function ratingHeader(
-  input: RatingRenderInput,
-  title: string,
-  rating: number,
-  renderService: TakumiRenderService,
-  data: MaimaiDataStore,
-) {
-  const avatarId = input.settings?.avatar ?? 0
-  const plateId = input.settings?.plate ?? 0
+function ratingColor(input: RatingRenderInput, rating: number, oldCount: number, newCount: number) {
+  if (newCount === 0) return Rating.color(input.player.rating)
+  return oldCount + newCount < 50 ? Rating.colorOld(rating) : Rating.color(rating)
+}
+
+async function header(input: RatingRenderInput, title: string, rating: number, oldCount: number, newCount: number,
+  service: TakumiRenderService, data: MaimaiDataStore): Promise<Node[]> {
   const [avatar, plate] = await Promise.all([
-    renderService.loadAsset(data.avatarPath(avatarId), resolvePackageAssetPath('fallback/avatar.png')),
-    renderService.loadAsset(data.platePath(plateId), resolvePackageAssetPath('fallback/plate.png')),
+    service.loadAsset(data.avatarPath(input.settings?.avatar ?? 0), resolvePackageAssetPath('fallback/avatar.png')),
+    service.loadAsset(data.platePath(input.settings?.plate ?? 0), resolvePackageAssetPath('fallback/plate.png')),
   ])
+  const color = ratingColor(input, rating, oldCount, newCount)
+  const course = Math.max(0, Math.min(23, Math.trunc(input.player.course) || 0))
+  const digits = String(Math.max(0, Math.trunc(rating))).slice(-5)
+  const digitX = 163 + 176 - digits.length * 16
+  const staticNodes = await Promise.all([
+    artwork(service, `rating_base_${color}`, 163, 42, 192, 40),
+    artwork(service, 'header_name', 161, 77, 300, 56),
+    artwork(service, 'header_shougou', 161, 125, 300, 39),
+    artwork(service, `dani_${course}`, 365, 84, 91, 38),
+    ...[...digits].map((digit, index) => artwork(service, `rating_${digit}`, digitX + index * 16, 53, 16, 20)),
+  ])
+  return [
+    imageAt(plate, 47, 36, 773, 125),
+    imageAt(avatar, 55, 44, 108, 108),
+    ...staticNodes,
+    textAt(input.player.nickname || 'maimai player', 178, 88, 181, 34, 25, '#24232d'),
+    textAt(title, 170, 134, 281, 20, 14, '#34343d'),
+  ]
+}
 
+async function card(record: RecordEntry | undefined, section: 'old' | 'new', index: number, x: number, y: number,
+  service: TakumiRenderService, data: MaimaiDataStore): Promise<Node> {
+  const difficulty = record?.chart.difficulty.name as MaimaiDifficultyName | undefined
+  const base = difficulty && difficulty in MAIMAI_DIFFICULTY_COLORS ? difficulty : 'None'
+  const children: Node[] = [await artwork(service, `base_${base}`, 0, 0, 241, 96)]
+  if (record) {
+    const cover = await service.loadAsset(data.coverPath(record.music.resourceId), resolvePackageAssetPath('fallback/cover.png'))
+    const stars = DeluxeScore.stars(record.deluxeScore, record.chart.maxDeluxeScore)
+    const score = Rate.toString(record.achievement)
+    const status = await Promise.all([
+      artwork(service, `type_${record.music.type.value}`, 15, 12, 19, record.music.type.value === 'DX' ? 13 : 10),
+      artwork(service, `icon_dxstar_${stars}`, 175, 8, 50, 11),
+      artwork(service, `rank_${record.rate}`, 148, 78, 40, 16),
+      artwork(service, `icon_${record.comboStatus.value}`, 186, 77, 19, 19),
+      artwork(service, `icon_${record.syncStatus.value}`, 207, 77, 19, 19),
+    ])
+    children.push(
+      imageAt(cover, 13, 10, 72, 72),
+      ...status,
+      textAt(`#${index + 1} ${record.music.id}`, 91, 8, 82, 14, 10, '#ffffff'),
+      textAt(record.music.name, 91, 22, 137, 16, 12, '#ffffff'),
+      textAt(score, 90, 40, 139, 22, score.length > 9 ? 18 : 20, '#ffffff'),
+      textAt(`${record.chart.levelValue.toFixed(1)}→${record.rating}`, 90, 78, 59, 16, 11,
+        MAIMAI_DIFFICULTY_COLORS[base as MaimaiDifficultyName] ?? MAIMAI_RENDER_THEME.colors.text),
+    )
+  }
   return createContainerNode({
-    id: 'rating-header',
-    style: {
-      width: '100%',
-      height: 176,
-      padding: 16,
-      overflow: 'hidden',
-      display: 'flex',
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 18,
-      borderRadius: 6,
-      border: `1px solid ${MAIMAI_RENDER_THEME.colors.line}`,
-      backgroundColor: MAIMAI_RENDER_THEME.colors.surface,
-    },
-    children: [
-      createImageNode({
-        src: avatar,
-        width: 128,
-        height: 128,
-        style: {
-          width: 128,
-          height: 128,
-          objectFit: 'cover',
-          borderRadius: 64,
-          border: `6px solid ${MAIMAI_RENDER_THEME.colors.highlight}`,
-          backgroundColor: MAIMAI_RENDER_THEME.colors.accent,
-          flexShrink: 0,
-        },
-      }),
-      createContainerNode({
-        style: {
-          position: 'relative',
-          width: 690,
-          height: 132,
-          overflow: 'hidden',
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'center',
-          borderLeft: `8px solid ${MAIMAI_RENDER_THEME.colors.secondaryAccent}`,
-          backgroundColor: '#edf7fa',
-          flexShrink: 0,
-        },
-        children: [
-          createImageNode({
-            src: plate,
-            width: 690,
-            height: 132,
-            style: {
-              position: 'absolute',
-              left: 0,
-              top: 0,
-              width: 690,
-              height: 132,
-              objectFit: 'cover',
-              opacity: 0.22,
-            },
-          }),
-          createContainerNode({
-            style: {
-              position: 'absolute',
-              left: 0,
-              top: 0,
-              width: 690,
-              height: 132,
-              backgroundColor: 'rgba(237,247,250,0.72)',
-            },
-          }),
-          createContainerNode({
-            style: {
-              position: 'relative',
-              width: '100%',
-              height: '100%',
-              paddingLeft: 22,
-              paddingRight: 22,
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'center',
-              overflow: 'hidden',
-              color: MAIMAI_RENDER_THEME.colors.text,
-            },
-            children: [
-              createTextNode({
-                text: input.player.nickname || 'maimai player',
-                style: {
-                  width: '100%',
-                  height: 44,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                  fontSize: 30,
-                  fontWeight: 700,
-                  lineHeight: 1.35,
-                },
-              }),
-              createTextNode({
-                text: title,
-                style: {
-                  width: '100%',
-                  height: 30,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                  fontSize: 16,
-                  fontWeight: 700,
-                  color: MAIMAI_RENDER_THEME.colors.mutedText,
-                },
-              }),
-            ],
-          }),
-        ],
-      }),
-      createContainerNode({
-        id: 'rating-number-plate',
-        style: {
-          width: 300,
-          height: 112,
-          paddingLeft: 20,
-          paddingRight: 20,
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'center',
-          border: `3px solid ${MAIMAI_RENDER_THEME.colors.highlight}`,
-          backgroundColor: MAIMAI_RENDER_THEME.colors.darkSurface,
-          color: '#ffffff',
-          flexShrink: 0,
-          overflow: 'hidden',
-        },
-        children: [
-          createTextNode({
-            text: 'DELUXE RATING',
-            style: { fontSize: 13, fontWeight: 700, color: '#ffffff' },
-          }),
-          createTextNode({
-            text: String(rating),
-            style: { fontSize: 46, fontWeight: 700, lineHeight: 1.05, color: '#ffe36b' },
-          }),
-        ],
-      }),
-      createContainerNode({
-        id: 'rating-course-badge',
-        style: {
-          width: 150,
-          height: 112,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          border: `3px solid ${MAIMAI_RENDER_THEME.colors.highlight}`,
-          backgroundColor: MAIMAI_RENDER_THEME.colors.darkSurface,
-          color: '#ffffff',
-          flexShrink: 0,
-          overflow: 'hidden',
-        },
-        children: [
-          createTextNode({
-            text: 'DAN',
-            style: { fontSize: 13, fontWeight: 700, color: MAIMAI_RENDER_THEME.colors.highlight },
-          }),
-          createTextNode({
-            text: String(input.player.course),
-            style: { fontSize: 35, fontWeight: 700, lineHeight: 1.1 },
-          }),
-        ],
-      }),
-    ],
+    id: `rating-slot-${section}-${index + 1}`,
+    attributes: { 'data-empty': String(!record) },
+    style: { position: 'absolute', left: x, top: y, width: 241, height: 96, overflow: 'hidden' },
+    children,
   })
 }
 
-export async function createRatingRenderPlan(
-  input: RatingRenderInput,
-  renderService: TakumiRenderService,
-  data: MaimaiDataStore,
-): Promise<RatingRenderPlan> {
-  const oldCount = positiveCount(input.oldCount, 35, 'Old rating slot count')
-  const newCount = positiveCount(input.newCount, 15, 'New rating slot count')
+async function cards(records: readonly RecordEntry[], section: 'old' | 'new', count: number, startY: number,
+  service: TakumiRenderService, data: MaimaiDataStore) {
+  return Promise.all(Array.from({ length: count }, (_, index) => card(
+    records[index], section, index,
+    CARD_X + index % CARD_COLUMNS * CARD_STEP_X,
+    startY + Math.floor(index / CARD_COLUMNS) * CARD_STEP_Y,
+    service, data,
+  )))
+}
+
+export async function createRatingRenderPlan(input: RatingRenderInput, service: TakumiRenderService,
+  data: MaimaiDataStore): Promise<RatingRenderPlan> {
+  const oldCount = countOf(input.oldCount, 35, 'Old rating slot count')
+  const newCount = countOf(input.newCount, 15, 'New rating slot count')
+  if (oldCount + newCount > 50) throw new RangeError('Rating image supports at most 50 slots')
   const oldRating = input.oldRecords.slice(0, oldCount).reduce((sum, record) => sum + record.rating, 0)
   const newRating = input.newRecords.slice(0, newCount).reduce((sum, record) => sum + record.rating, 0)
   const rating = input.rating ?? oldRating + newRating
-  const title = input.title
-    ?? `[${input.backend}] B${oldCount} ${oldRating} + B${newCount} ${newRating} = ${rating}`
-  const [header, oldSection, newSection] = await Promise.all([
-    ratingHeader(input, title, rating, renderService, data),
-    ratingSection(input.oldLabel ?? `OLD CHARTS · B${oldCount}`, 'old', oldCount, input.oldRecords, renderService, data),
-    ratingSection(input.newLabel ?? `NEW CHARTS · B${newCount}`, 'new', newCount, input.newRecords, renderService, data),
+  const title = input.title ?? `[${input.backend}] B${oldCount} ${oldRating} + B${newCount} ${newRating} = ${rating}`
+  const oldRows = Math.ceil(oldCount / CARD_COLUMNS)
+  const dividerY = CARD_Y + oldRows * CARD_STEP_Y
+  const newY = dividerY + (newCount ? DIVIDER_HEIGHT : 0)
+  const [background, headerNodes, oldCards, newCards, divider] = await Promise.all([
+    artwork(service, 'background', 0, 0, 1280, 1280),
+    header(input, title, rating, oldCount, newCount, service, data),
+    cards(input.oldRecords, 'old', oldCount, CARD_Y, service, data),
+    cards(input.newRecords, 'new', newCount, newY, service, data),
+    newCount ? artwork(service, 'icon_b15', 587, dividerY, 105, 73) : Promise.resolve(undefined),
   ])
-
+  const titleBand = createContainerNode({
+    id: 'rating-title',
+    style: {
+      position: 'absolute', left: CARD_X, top: 163, width: 1194, height: 22,
+      overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.86)',
+    },
+    children: [textAt(title, 8, 2, 1178, 19, 14, '#243c55')],
+  })
+  const children: Node[] = [background, ...headerNodes, titleBand, ...oldCards]
+  if (divider) children.push(divider)
+  children.push(...newCards, createContainerNode({
+    id: 'rating-footer',
+    style: { position: 'absolute', left: 0, top: FOOTER_Y, width: 1280, height: 45, backgroundColor: '#013162' },
+  }))
   return {
     width: RATING_TEMPLATE_SIZE.width,
     height: RATING_TEMPLATE_SIZE.height,
     node: createContainerNode({
       id: 'rating-template',
-      style: {
-        width: RATING_TEMPLATE_SIZE.width,
-        height: RATING_TEMPLATE_SIZE.height,
-        overflow: 'hidden',
-        padding: 28,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 16,
-        backgroundColor: MAIMAI_RENDER_THEME.colors.background,
-        color: MAIMAI_RENDER_THEME.colors.text,
-        fontFamily: MAIMAI_RENDER_THEME.fontFamily,
-      },
-      children: [header, oldSection, newSection],
+      style: { position: 'relative', width: 1280, height: 1280, overflow: 'hidden', fontFamily: MAIMAI_RENDER_THEME.fontFamily },
+      children,
     }),
   }
 }

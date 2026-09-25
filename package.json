@@ -8,7 +8,8 @@
     "lib",
     "assets/fallback",
     "assets/fonts",
-    "assets/generated"
+    "assets/generated",
+    "assets/rating"
   ],
   "homepage": "https://github.com/KeiMaidDev/koishi-plugin-mai-plugin#readme",
   "repository": {
