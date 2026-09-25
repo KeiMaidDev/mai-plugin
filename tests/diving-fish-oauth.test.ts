@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { Context } from 'koishi'
 import { registerUpdateCommands } from '../src/commands/update'
+import { registerImageCommands } from '../src/commands/image'
 import { DivingFishOAuth, DivingFishOAuthError } from '../src/providers/diving-fish-oauth'
 import { DivingFishProvider, DIVING_FISH_ENDPOINTS } from '../src/providers/diving-fish'
 import { ChartInfo, MusicInfo, Notes } from '../src/domain/music'
@@ -20,6 +21,7 @@ function commandContext(actions: Map<string, (...args: any[]) => any>): Context 
   let name = ''
   const chain = {
     alias() { return this },
+    option() { return this },
     action(callback: (...args: any[]) => any) { actions.set(name, callback); return this },
   }
   return { command(command: string) { name = command; return chain } } as unknown as Context
@@ -59,6 +61,43 @@ test('binding command presents the device URL and code through QQ rawMarkdown', 
   assert.match(rendered, /qq:rawmarkdown/)
   assert.match(rendered, /auth.diving-fish.com/)
   assert.ok(!actions.has('mai.bind-diving-fish <token:text>'))
+})
+
+test('unbind command links remote revocation and invalid client is explained', async () => {
+  const actions = new Map<string, (...args: any[]) => any>()
+  const messages: unknown[] = []
+  registerUpdateCommands(commandContext(actions), {
+    updateService: {
+      unbindDivingFish: async () => {},
+      beginDivingFishOAuth: async () => { throw new DivingFishOAuthError('invalid_client') },
+    },
+  } as any)
+  const argv = { options: {}, session: {
+    userId: 'user-1', channelId: 'channel-1', platform: 'qq', content: '/mai 解绑水鱼',
+    send: async (message: unknown) => { messages.push(message) },
+  } }
+  await actions.get('mai.unbind-diving-fish')!(argv)
+  assert.match(JSON.stringify(messages.at(-1)), /auth.diving-fish.com\/apps/)
+  assert.match(JSON.stringify(messages.at(-1)), /qq:rawmarkdown/)
+  await actions.get('mai.bind-diving-fish')!(argv)
+  assert.match(JSON.stringify(messages.at(-1)), /客户端 ID 和密钥/)
+})
+
+test('score-list command explains when another player has not authorized this app', async () => {
+  const actions = new Map<string, (...args: any[]) => any>()
+  const messages: unknown[] = []
+  registerImageCommands(commandContext(actions), {
+    data: { musics: new Map() },
+    queryService: {
+      getQueryParams: async () => ({ type: 'username', username: 'other', isSelf: false }),
+      records: async () => { throw new ProviderOAuthRequiredError('diving-fish') },
+    },
+  } as any)
+  await actions.get('mai.score-list [filter:string] [page:posint]')!({ options: {}, session: {
+    userId: 'user-1', channelId: 'channel-1', platform: 'qq', content: '/mai 分数列表 other',
+    send: async (message: unknown) => { messages.push(message) },
+  } }, '', '')
+  assert.match(JSON.stringify(messages.at(-1)), /目标玩家尚未授权本应用读取水鱼成绩/)
 })
 
 test('device consent stores the account ID and unbinding stops later completion', async () => {
@@ -199,6 +238,55 @@ test('concurrent queries reuse a short-lived token and renew near expiry', async
     now = 271_000
     assert.equal(await oauth.accessToken('sub:7', 'prober.records.read'), 'token-2')
     assert.equal(exchanges, 2)
+  } finally {
+    oauth.dispose()
+  }
+})
+
+test('settings authorization checks reuse the token and preserve partial bindings', async () => {
+  const bind = bindings()
+  bind.accounts.set('user-1', 'account-7')
+  let exchanges = 0
+  let missingScope = false
+  const ctx = { http: async () => {
+    exchanges += 1
+    return missingScope
+      ? { status: 400, data: { error: 'consent_required', error_description: 'scope not granted' } }
+      : { status: 200, data: { access_token: 'combined-token', expires_in: 300 } }
+  } } as unknown as Context
+  const oauth = new DivingFishOAuth(ctx, credentials, bind)
+  try {
+    assert.equal(await oauth.hasActiveAuthorization('user-1'), true)
+    assert.equal(await oauth.hasActiveAuthorization('user-1'), true)
+    assert.equal(await oauth.accessToken('sub:account-7', 'prober.records.read'), 'combined-token')
+    assert.equal(exchanges, 1)
+    oauth.invalidate('sub:account-7')
+    missingScope = true
+    assert.equal(await oauth.hasActiveAuthorization('user-1'), false)
+    assert.equal(await oauth.hasBinding('user-1'), true)
+  } finally {
+    oauth.dispose()
+  }
+})
+
+test('stale revocation check cannot remove a newer account binding', async () => {
+  const bind = bindings()
+  bind.accounts.set('user-1', 'account-7')
+  let start!: () => void
+  const started = new Promise<void>(resolve => { start = resolve })
+  let finish!: (value: unknown) => void
+  const ctx = { http: async () => {
+    start()
+    return new Promise(resolve => { finish = resolve })
+  } } as unknown as Context
+  const oauth = new DivingFishOAuth(ctx, credentials, bind)
+  try {
+    const status = oauth.hasActiveAuthorization('user-1')
+    await started
+    bind.accounts.set('user-1', 'account-8')
+    finish({ status: 400, data: { error: 'consent_required' } })
+    assert.equal(await status, false)
+    assert.equal(await bind.getDivingFishAccount('user-1'), 'account-8')
   } finally {
     oauth.dispose()
   }

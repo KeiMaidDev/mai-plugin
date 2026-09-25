@@ -7,7 +7,7 @@ import { ProviderMalformedPayloadError, ProviderTransportError } from './errors'
 const AUTH = 'https://auth.diving-fish.com'
 const SCOPES = 'prober.records.read prober.records.write'
 
-type Scope = 'prober.records.read' | 'prober.records.write'
+type Scope = 'prober.records.read' | 'prober.records.write' | typeof SCOPES
 export type OAuthSubject = `sub:${string}` | `username:${string}`
 
 export class DivingFishOAuthError extends Error {
@@ -201,18 +201,17 @@ export class DivingFishOAuth {
     const accountId = await this.bind.getDivingFishAccount(userId)
     if (!accountId) return false
     try {
-      const data = await this.post('/oauth/token', {
-        ...this.credentials(), grant_type: 'urn:diving-fish:params:oauth:grant-type:on-behalf-of',
-        subject: `sub:${accountId}`, scope: SCOPES,
-      })
-      if (!object(data) || typeof data.access_token !== 'string') {
-        throw new ProviderMalformedPayloadError('diving-fish')
-      }
+      await this.accessToken(`sub:${accountId}`, SCOPES)
       return true
     } catch (error) {
-      if (error instanceof DivingFishOAuthError
-        && (error.code === 'consent_required' || error.code === 'scope_not_granted')) {
-        await this.unbind(userId)
+      if (error instanceof DivingFishOAuthError && error.code === 'scope_not_granted') return false
+      if (error instanceof DivingFishOAuthError && error.code === 'consent_required') {
+        await this.serializeBinding(userId, async () => {
+          if (await this.bind.getDivingFishAccount(userId) === accountId) {
+            await this.bind.removeDivingFishAccount(userId)
+          }
+        })
+        this.dropSubject(`sub:${accountId}`)
         return false
       }
       throw error
@@ -249,9 +248,11 @@ export class DivingFishOAuth {
   async accessToken(subject: OAuthSubject, scope: Scope) {
     if (this.disposed) throw new DivingFishOAuthError('disposed')
     const key = `${subject}\0${scope}`
-    const cached = this.tokens.get(key)
-    if (cached && cached.expiresAt - 30_000 > this.now()) return cached.value
-    const running = this.exchanges.get(key)
+    const combinedKey = `${subject}\0${SCOPES}`
+    const cached = [this.tokens.get(key), scope === SCOPES ? undefined : this.tokens.get(combinedKey)]
+      .find(token => token && token.expiresAt - 30_000 > this.now())
+    if (cached) return cached.value
+    const running = this.exchanges.get(key) ?? (scope === SCOPES ? undefined : this.exchanges.get(combinedKey))
     if (running) return running
     const generation = this.generations.get(subject) ?? 0
     const exchange = (async () => {
