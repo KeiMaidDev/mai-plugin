@@ -132,26 +132,29 @@ export class BindRepository {
     return row?.qq ?? null
   }
 
-  async setImportToken(id: string, importToken: string) {
-    await this.ctx.database.upsert('mai_diving_fish_bind', [{
-      id,
-      importToken,
-      updatedAt: new Date(),
+  async retireImportTokens() {
+    await this.ctx.database.remove('mai_diving_fish_bind', {})
+  }
+
+  async setDivingFishAccount(id: string, accountId: string) {
+    await this.ctx.database.upsert('mai_diving_fish_oauth_bind', [{
+      id, accountId, updatedAt: new Date(),
     }], ['id'])
   }
 
-  async getImportToken(id: string) {
-    const [row] = await this.ctx.database.get('mai_diving_fish_bind', { id })
-    return row?.importToken ?? null
+  async getDivingFishAccount(id: string) {
+    const [row] = await this.ctx.database.get('mai_diving_fish_oauth_bind', { id })
+    return row?.accountId ?? null
   }
 
-  async hasImportToken(id: string) {
-    const rows = await this.ctx.database.get('mai_diving_fish_bind', { id })
-    return rows.length > 0
+  async removeDivingFishAccount(id: string) {
+    await this.ctx.database.remove('mai_diving_fish_oauth_bind', { id })
   }
 
-  async removeImportToken(id: string) {
-    await this.ctx.database.remove('mai_diving_fish_bind', { id })
+  async divingFishAccountsForQq(qq: string) {
+    const owners = await this.ctx.database.get('mai_qq_bind', { qq })
+    const accounts = await Promise.all(owners.map(owner => this.getDivingFishAccount(owner.id)))
+    return [...new Set(accounts.filter((value): value is string => Boolean(value)))]
   }
 }
 

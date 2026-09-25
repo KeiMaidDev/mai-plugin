@@ -12,6 +12,12 @@ export interface MaiDivingFishBind {
   updatedAt: Date
 }
 
+export interface MaiDivingFishOAuthBind {
+  id: string
+  accountId: string
+  updatedAt: Date
+}
+
 export interface MaiSetting {
   id: string
   key: string
@@ -75,6 +81,7 @@ export interface MaiOauthToken {
 export interface MaiTables {
   mai_qq_bind: MaiQqBind
   mai_diving_fish_bind: MaiDivingFishBind
+  mai_diving_fish_oauth_bind: MaiDivingFishOAuthBind
   mai_setting: MaiSetting
   mai_alias: MaiAlias
   mai_alias_vote: MaiAliasVote
@@ -105,6 +112,12 @@ export function registerMaiDatabaseModels(ctx: Context) {
   }, {
     primary: 'id',
   })
+
+  ctx.model.extend('mai_diving_fish_oauth_bind', {
+    id: 'string(64)',
+    accountId: 'string(64)',
+    updatedAt: 'timestamp',
+  }, { primary: 'id' })
 
   ctx.model.extend('mai_setting', {
     id: 'string(64)',
