@@ -38,7 +38,16 @@ mai-plugin
 
 需要使用落雪 OAuth 时，请先配置 Koishi Server 的 `selfUrl`，或设置插件的 `publicBaseUrl`。
 
-水鱼详细成绩和更新需要在[水鱼账号开发者控制台](https://auth.diving-fish.com/console)登记机密客户端，配置 `divingFishOAuth.clientId`、`divingFishOAuth.clientSecret`，并获批 `prober.records.read` 与 `prober.records.write`。水鱼设备码授权不需要公网 OAuth 回调；成绩更新仍使用现有的微信回调路由。
+水鱼 Oauth 申请指南：
+- 使用水鱼账号登陆 [开发者控制台](https://auth.diving-fish.com/console)
+- 点击“创建新应用”
+- 填写应用名称（不超过 20 字）、应用描述（不超过 100 字）、主页地址（可留空，如填写须可公开访问）
+- 接入方式选择“Bot/工具”
+- 部署形态选择“由你自己部署运行”
+- 权限选择“读取你在查分器的资料（Rating、姓名框等）”与“读取你的舞萌 DX 成绩”
+- 点击提交，耐心等待审核完成
+- 审核通过后，点击生成client_secret，clint_id在申请完成后仅会显示一次，请务必妥善保管
+- 将申请到的client_secret与client_id填入对应的配置中，即可完成水鱼查分器配置
 
 ## 查分器绑定
 
