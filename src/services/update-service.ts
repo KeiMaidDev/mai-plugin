@@ -8,7 +8,7 @@ import { load } from 'cheerio'
 import type { Context } from 'koishi'
 import type { DebugTracer } from '../utils/debug'
 import type { DivingFishOAuth } from '../providers/diving-fish-oauth'
-import { ProviderOAuthRequiredError, ProviderRateLimitError, ProviderScopeError, ProviderPrivacyError } from '../providers/errors'
+import { ProviderConsentScopeError, ProviderOAuthRequiredError, ProviderRateLimitError, ProviderScopeError, ProviderPrivacyError } from '../providers/errors'
 
 const WAHLAP_ORIGIN = 'https://tgk-wcaime.wahlap.com'
 const LXNS_AUTHORIZE_ORIGIN = 'https://maimai.lxns.net'
@@ -69,7 +69,7 @@ export interface UpdateServiceOptions {
     removeOAuthToken(userId: string): Promise<void>
     hasOAuthToken(userId: string): Promise<boolean>
   }
-  divingFishOAuth: Pick<DivingFishOAuth, 'begin' | 'hasBinding' | 'unbind' | 'dispose'>
+  divingFishOAuth: Pick<DivingFishOAuth, 'begin' | 'hasBinding' | 'hasActiveAuthorization' | 'unbind' | 'dispose'>
   fetchAuthorizationRedirect(): Promise<string>
   fetchDivingFishRecords(callbackUrl: string): Promise<DivingFishImportRecord[]>
   importDivingFishRecords(
@@ -399,7 +399,7 @@ export class UpdateService {
   async getBindingStatus(userId: string) {
     const [lxns, divingFish] = await Promise.all([
       this.options.lxns.hasOAuthToken(userId),
-      this.options.divingFishOAuth.hasBinding(userId),
+      this.options.divingFishOAuth.hasActiveAuthorization(userId),
     ])
     return { lxns, divingFish }
   }
@@ -562,6 +562,8 @@ export class UpdateService {
         ? '水鱼授权已失效，请发送“/mai 绑定水鱼”重新授权。'
         : error instanceof ProviderScopeError
           ? '水鱼应用缺少成绩写入权限，请联系部署者确认 prober.records.write 已获批并重新授权。'
+          : error instanceof ProviderConsentScopeError
+            ? '水鱼账号授权未包含成绩写入权限，请发送“/mai 绑定水鱼”重新授权并同意读写权限。'
           : error instanceof ProviderRateLimitError
             ? '水鱼请求已达限额，请稍后重试。'
             : error instanceof ProviderPrivacyError

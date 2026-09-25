@@ -9,6 +9,7 @@ import { Rating } from '../domain/rating'
 import {
   ProviderAmbiguousTargetError,
   ProviderConfigurationError,
+  ProviderConsentScopeError,
   ProviderMalformedPayloadError,
   ProviderNoDataError,
   ProviderOAuthRequiredError,
@@ -24,7 +25,7 @@ import {
   type ProviderOptions,
   type UserQuery,
 } from './types'
-import { DivingFishOAuth, DivingFishOAuthError } from './diving-fish-oauth'
+import { DivingFishOAuth, DivingFishOAuthError, type OAuthSubject } from './diving-fish-oauth'
 
 const DIVING_FISH_BASE = 'https://www.diving-fish.com/api/maimaidxprober'
 
@@ -349,11 +350,11 @@ export class DivingFishProvider implements MaimaiProvider {
     return parseRatingPayload(response.data)
   }
 
-  private async subject(user: UserQuery) {
+  private async subject(user: UserQuery): Promise<OAuthSubject> {
     try {
       if (user.isSelf && user.userId) return await this.oauth.subjectForUser(user.userId)
       return user.type === 'username'
-        ? `username:${user.username}`
+        ? `username:${user.username}` as const
         : await this.oauth.subjectForQq(String(user.qq))
     } catch (error) {
       this.handleOAuthError(error)
@@ -364,6 +365,7 @@ export class DivingFishProvider implements MaimaiProvider {
     if (error instanceof DivingFishOAuthError) {
       if (error.code === 'ambiguous_qq') throw new ProviderAmbiguousTargetError(this.id)
       if (error.code === 'consent_required') throw new ProviderOAuthRequiredError(this.id)
+      if (error.code === 'scope_not_granted') throw new ProviderConsentScopeError(this.id)
       if (error.code === 'invalid_scope') throw new ProviderScopeError(this.id)
       if (error.code === 'slow_down') throw new ProviderRateLimitError(this.id)
       if (error.code === 'invalid_client' || error.code === 'not_configured'
@@ -374,7 +376,7 @@ export class DivingFishProvider implements MaimaiProvider {
     throw error
   }
 
-  private async authorizedRequest(subject: string, scope: 'prober.records.read' | 'prober.records.write',
+  private async authorizedRequest(subject: OAuthSubject, scope: 'prober.records.read' | 'prober.records.write',
     method: 'GET' | 'POST', url: string, data?: unknown) {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       let token: string

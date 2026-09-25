@@ -53,6 +53,12 @@ export class ProviderScopeError extends ProviderError {
   }
 }
 
+export class ProviderConsentScopeError extends ProviderError {
+  constructor(provider: ProviderId) {
+    super(provider, 'The player authorization lacks the required scope.', 403)
+  }
+}
+
 export class ProviderRateLimitError extends ProviderError {
   constructor(provider: ProviderId) {
     super(provider, 'The provider rate limit was reached.', 429)

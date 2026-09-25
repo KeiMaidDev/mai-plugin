@@ -8,6 +8,7 @@ const AUTH = 'https://auth.diving-fish.com'
 const SCOPES = 'prober.records.read prober.records.write'
 
 type Scope = 'prober.records.read' | 'prober.records.write'
+export type OAuthSubject = `sub:${string}` | `username:${string}`
 
 export class DivingFishOAuthError extends Error {
   constructor(readonly code: string) {
@@ -37,7 +38,10 @@ function object(value: unknown): value is Record<string, unknown> {
 }
 
 function oauthCode(value: unknown) {
-  return object(value) && typeof value.error === 'string' ? value.error : null
+  if (!object(value) || typeof value.error !== 'string') return null
+  if (value.error === 'consent_required' && typeof value.error_description === 'string'
+    && value.error_description.includes('scope not granted')) return 'scope_not_granted'
+  return value.error
 }
 
 export class DivingFishOAuth {
@@ -104,13 +108,14 @@ export class DivingFishOAuth {
       || !Number.isFinite(data.expires_in) || !Number.isFinite(data.interval)) {
       throw new ProviderMalformedPayloadError('diving-fish')
     }
+    if (this.disposed) throw new DivingFishOAuthError('disposed')
     const url = new URL(data.verification_uri_complete)
     if (url.origin !== AUTH || url.pathname !== '/device') throw new ProviderMalformedPayloadError('diving-fish')
     this.cancel(session.userId)
     const pending: PendingBind = { cancelled: false }
     this.pending.set(session.userId, pending)
     void this.poll(session, pending, data.device_code, Math.max(1, Number(data.interval)),
-      this.now() + Number(data.expires_in) * 1000)
+      this.now() + Number(data.expires_in) * 1000).catch(() => {})
     return { url: url.href, code: data.user_code }
   }
 
@@ -192,6 +197,28 @@ export class DivingFishOAuth {
     return Boolean(await this.bind.getDivingFishAccount(userId))
   }
 
+  async hasActiveAuthorization(userId: string) {
+    const accountId = await this.bind.getDivingFishAccount(userId)
+    if (!accountId) return false
+    try {
+      const data = await this.post('/oauth/token', {
+        ...this.credentials(), grant_type: 'urn:diving-fish:params:oauth:grant-type:on-behalf-of',
+        subject: `sub:${accountId}`, scope: SCOPES,
+      })
+      if (!object(data) || typeof data.access_token !== 'string') {
+        throw new ProviderMalformedPayloadError('diving-fish')
+      }
+      return true
+    } catch (error) {
+      if (error instanceof DivingFishOAuthError
+        && (error.code === 'consent_required' || error.code === 'scope_not_granted')) {
+        await this.unbind(userId)
+        return false
+      }
+      throw error
+    }
+  }
+
   async unbind(userId: string) {
     this.cancel(userId)
     const accountId = await this.serializeBinding(userId, async () => {
@@ -202,24 +229,25 @@ export class DivingFishOAuth {
     if (accountId) this.dropSubject(`sub:${accountId}`)
   }
 
-  async subjectForUser(userId: string) {
+  async subjectForUser(userId: string): Promise<OAuthSubject> {
     const accountId = await this.bind.getDivingFishAccount(userId)
     if (!accountId) throw new DivingFishOAuthError('consent_required')
     return `sub:${accountId}`
   }
 
-  async subjectForQq(qq: string) {
+  async subjectForQq(qq: string): Promise<OAuthSubject> {
     const accounts = await this.bind.divingFishAccountsForQq(qq)
     if (accounts.length !== 1) throw new DivingFishOAuthError(accounts.length ? 'ambiguous_qq' : 'consent_required')
     return `sub:${accounts[0]}`
   }
 
-  private dropSubject(subject: string) {
+  private dropSubject(subject: OAuthSubject) {
     this.generations.set(subject, (this.generations.get(subject) ?? 0) + 1)
     for (const key of this.tokens.keys()) if (key.startsWith(`${subject}\0`)) this.tokens.delete(key)
   }
 
-  async accessToken(subject: string, scope: Scope) {
+  async accessToken(subject: OAuthSubject, scope: Scope) {
+    if (this.disposed) throw new DivingFishOAuthError('disposed')
     const key = `${subject}\0${scope}`
     const cached = this.tokens.get(key)
     if (cached && cached.expiresAt - 30_000 > this.now()) return cached.value
@@ -251,7 +279,7 @@ export class DivingFishOAuth {
     }
   }
 
-  invalidate(subject: string) {
+  invalidate(subject: OAuthSubject) {
     this.dropSubject(subject)
   }
 

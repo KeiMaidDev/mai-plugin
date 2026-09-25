@@ -9,6 +9,7 @@ import {
   ProviderAmbiguousTargetError,
   ProviderBindingRequiredError,
   ProviderConfigurationError,
+  ProviderConsentScopeError,
   ProviderError,
   findCancellationError,
   ProviderMalformedPayloadError,
@@ -43,6 +44,7 @@ const exceptionPriority = [
   ProviderConfigurationError,
   ProviderAmbiguousTargetError,
   ProviderScopeError,
+  ProviderConsentScopeError,
   ProviderRateLimitError,
   ProviderPrivacyError,
   ProviderBindingRequiredError,
@@ -157,7 +159,10 @@ export class ProviderChain {
         failures.push(failure)
       }
     }
-    throw this.selectFailure(failures)
+    const relevant = !user.isSelf
+      ? failures.filter(error => !(error.provider === 'lxns' && error instanceof ProviderOAuthRequiredError))
+      : failures
+    throw this.selectFailure(relevant.length ? relevant : failures)
   }
 
   private async virtualProvider(user: UserQuery) {

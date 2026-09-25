@@ -2,11 +2,18 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { Context } from 'koishi'
 import { registerUpdateCommands } from '../src/commands/update'
-import { DivingFishOAuth } from '../src/providers/diving-fish-oauth'
+import { DivingFishOAuth, DivingFishOAuthError } from '../src/providers/diving-fish-oauth'
 import { DivingFishProvider, DIVING_FISH_ENDPOINTS } from '../src/providers/diving-fish'
 import { ChartInfo, MusicInfo, Notes } from '../src/domain/music'
 import { MusicDifficulty, MusicGenre, MusicType } from '../src/domain/enums'
+import { PlayerInfo, RecordsResponse } from '../src/domain/player'
 import { UpdateService } from '../src/services/update-service'
+import { DebugTracer } from '../src/utils/debug'
+import { ProviderChain } from '../src/providers/provider-chain'
+import {
+  ProviderAmbiguousTargetError, ProviderOAuthRequiredError, ProviderPrivacyError,
+  ProviderRateLimitError, ProviderTransportError,
+} from '../src/providers/errors'
 import type { Config } from '../src/config'
 
 function commandContext(actions: Map<string, (...args: any[]) => any>): Context {
@@ -107,6 +114,71 @@ test('denied device consent ends with a retry path and no binding', async () => 
   }
 })
 
+test('pending and slow-down responses keep polling at the server interval', async () => {
+  const bind = bindings()
+  let polls = 0
+  const replies: string[] = []
+  const ctx = { http: async (url: string) => url.endsWith('/oauth/device_authorization')
+    ? { status: 200, data: {
+      device_code: 'device-secret', user_code: 'ABCD',
+      verification_uri_complete: 'https://auth.diving-fish.com/device?user_code=ABCD',
+      expires_in: 20, interval: 1,
+    } }
+    : { status: 400, data: { error: ++polls === 1 ? 'authorization_pending' : 'slow_down' } },
+  } as unknown as Context
+  const oauth = new DivingFishOAuth(ctx, credentials, bind)
+  try {
+    await oauth.begin({ userId: 'user-1', send: async text => { replies.push(text) } })
+    await new Promise(resolve => setTimeout(resolve, 2250))
+    assert.equal(polls, 2)
+    assert.deepEqual(replies, [])
+  } finally {
+    oauth.dispose()
+  }
+})
+
+test('device expiry and disposal stop polling without a duplicate reply', async () => {
+  const bind = bindings()
+  let polls = 0
+  const replies: string[] = []
+  let expiry = 1
+  const ctx = { http: async (url: string) => url.endsWith('/oauth/device_authorization')
+    ? { status: 200, data: {
+      device_code: 'device-secret', user_code: 'ABCD',
+      verification_uri_complete: 'https://auth.diving-fish.com/device?user_code=ABCD',
+      expires_in: expiry, interval: 1,
+    } }
+    : (polls += 1, { status: 400, data: { error: 'authorization_pending' } }),
+  } as unknown as Context
+  const oauth = new DivingFishOAuth(ctx, credentials, bind)
+  try {
+    await oauth.begin({ userId: 'user-1', send: async text => { replies.push(text) } })
+    await new Promise(resolve => setTimeout(resolve, 1150))
+    assert.deepEqual(replies, ['水鱼授权已过期，请发送“/mai 绑定水鱼”重试。'])
+    assert.equal(polls, 0)
+    expiry = 10
+    await oauth.begin({ userId: 'user-1', send: async text => { replies.push(text) } })
+    oauth.dispose()
+    await new Promise(resolve => setTimeout(resolve, 1150))
+    assert.equal(polls, 0)
+    assert.equal(replies.length, 1)
+  } finally {
+    oauth.dispose()
+  }
+})
+
+test('invalid OAuth client is rejected before presenting a binding link', async () => {
+  const bind = bindings()
+  const ctx = { http: async () => ({ status: 401, data: { error: 'invalid_client' } }) } as unknown as Context
+  const oauth = new DivingFishOAuth(ctx, credentials, bind)
+  try {
+    await assert.rejects(oauth.begin({ userId: 'user-1', send: async () => {} }),
+      (error: unknown) => error instanceof DivingFishOAuthError && error.code === 'invalid_client')
+  } finally {
+    oauth.dispose()
+  }
+})
+
 test('concurrent queries reuse a short-lived token and renew near expiry', async () => {
   const bind = bindings()
   let now = 0
@@ -180,12 +252,14 @@ test('authorized records use Bearer without target identity parameters and reuse
     throw new Error(`Unexpected request: ${url}`)
   } } as unknown as Context
   const oauth = new DivingFishOAuth(ctx, credentials, bind)
+  const logs: string[] = []
+  const debug = new DebugTracer(true, { info: message => { logs.push(message) } })
   const music = new MusicInfo(1234, 'Song', MusicType.Deluxe, '', '', MusicGenre.Original,
     160, { id: 1, name: 'test', version: 1 }, false)
   music.charts = [new ChartInfo(music, MusicDifficulty.Master, '14', 14, new Notes(), '')]
   const provider = new DivingFishProvider({ ctx, oauth,
     config: {} as Config, data: { musics: new Map([[1234, music]]) } as any,
-    repositories: {} as any,
+    repositories: {} as any, debug,
   })
   try {
     const user = { type: 'qq' as const, qq: '123456', userId: 'user-1', isSelf: true }
@@ -215,6 +289,36 @@ test('authorized records use Bearer without target identity parameters and reuse
     assert.equal(submission.headers.Authorization, 'Bearer bearer-1')
     assert.equal(submission.headers['Import-Token'], undefined)
     assert.equal(exchanges, 2)
+    const other = await provider.getPlayerRecords({ type: 'username', username: 'other' }, [music])
+    assert.equal(other.records.length, 1)
+    assert.equal(exchanges, 3)
+    const otherExchange = requests.filter(request => request.url.endsWith('/oauth/token')).at(-1)!
+    assert.equal((otherExchange.data as URLSearchParams).get('subject'), 'username:other')
+    assert.ok(!logs.join('\n').includes('bearer-1'))
+    assert.ok(!logs.join('\n').includes('account-7'))
+    assert.ok(!logs.join('\n').includes('100.5'))
+  } finally {
+    oauth.dispose()
+  }
+})
+
+test('rejected cached Bearer token renews once and then asks for binding', async () => {
+  const bind = bindings()
+  bind.accounts.set('user-1', 'account-7')
+  let exchanges = 0
+  const ctx = { http: async (url: string) => url.endsWith('/oauth/token')
+    ? (++exchanges === 1
+      ? { status: 200, data: { access_token: 'revoked-token', expires_in: 300 } }
+      : { status: 400, data: { error: 'consent_required' } })
+    : { status: 401, data: { status: 'error', message: 'invalid_token' } },
+  } as unknown as Context
+  const oauth = new DivingFishOAuth(ctx, credentials, bind)
+  const provider = new DivingFishProvider({ ctx, oauth, config: {} as Config,
+    data: { musics: new Map() } as any, repositories: {} as any })
+  try {
+    await assert.rejects(provider.getPlayerRecords({ type: 'qq', qq: '123456',
+      userId: 'user-1', isSelf: true }, []), ProviderOAuthRequiredError)
+    assert.equal(exchanges, 2)
   } finally {
     oauth.dispose()
   }
@@ -225,11 +329,17 @@ test('WeChat callback submits with write scope and reports missing permission', 
   bind.accounts.set('user-1', 'account-7')
   const requests: Array<{ url: string; data: unknown; headers: Record<string, string> }> = []
   let allowWrite = true
+  let tokenScopeDenied = false
+  let consentRevoked = false
   const ctx = { http: async (url: string, options: any) => {
     requests.push({ url, data: options.data, headers: options.headers ?? {} })
-    if (url.endsWith('/oauth/token')) return { status: 200, data: {
-      access_token: 'write-token', expires_in: 300,
-    } }
+    if (url.endsWith('/oauth/token')) {
+      if (consentRevoked) return { status: 400, data: { error: 'consent_required' } }
+      if (tokenScopeDenied) return { status: 400, data: {
+        error: 'consent_required', error_description: 'scope not granted',
+      } }
+      return { status: 200, data: { access_token: 'write-token', expires_in: 300 } }
+    }
     return allowWrite
       ? { status: 200, data: { creates: 1, updates: 0, message: 'ok' } }
       : { status: 403, data: { message: 'access token 缺少权限：prober.records.write' } }
@@ -266,7 +376,90 @@ test('WeChat callback submits with write scope and reports missing permission', 
     const second = new URL(await service.beginDivingFishUpdate(session)).searchParams.get('token')!
     await assert.rejects(service.completeDivingFishUpdate(second, callback))
     assert.match(messages.at(-1) ?? '', /缺少成绩写入权限/)
+
+    tokenScopeDenied = true
+    oauth.invalidate('sub:account-7')
+    const third = new URL(await service.beginDivingFishUpdate(session)).searchParams.get('token')!
+    await assert.rejects(service.completeDivingFishUpdate(third, callback))
+    assert.match(messages.at(-1) ?? '', /重新授权并同意读写权限/)
+
+    tokenScopeDenied = false
+    consentRevoked = true
+    assert.deepEqual(await service.getBindingStatus('user-1'), { lxns: false, divingFish: false })
+    assert.equal(await oauth.hasBinding('user-1'), false)
   } finally {
     service.dispose()
+  }
+})
+
+test('other-player records require consent and ambiguous QQ mappings are rejected', async () => {
+  const bind = bindings()
+  bind.qq.set('123456', ['user-1', 'user-2'])
+  bind.accounts.set('user-1', 'account-7')
+  bind.accounts.set('user-2', 'account-8')
+  let tokenError = 'consent_required'
+  const ctx = { http: async (url: string) => url.endsWith('/oauth/token')
+    ? { status: 400, data: { error: tokenError } }
+    : { status: 200, data: {} },
+  } as unknown as Context
+  const oauth = new DivingFishOAuth(ctx, credentials, bind)
+  const provider = new DivingFishProvider({ ctx, oauth, config: {} as Config,
+    data: { musics: new Map() } as any, repositories: {} as any })
+  try {
+    await assert.rejects(provider.getPlayerRecords({ type: 'qq', qq: '123456' }, []),
+      ProviderAmbiguousTargetError)
+    await assert.rejects(provider.getPlayerRecords({ type: 'username', username: 'other' }, []),
+      ProviderOAuthRequiredError)
+    tokenError = 'slow_down'
+    await assert.rejects(provider.getPlayerRecords({ type: 'username', username: 'other' }, []),
+      ProviderRateLimitError)
+  } finally {
+    oauth.dispose()
+  }
+})
+
+test('privacy denial remains distinct from transport failure during automatic fallback', async () => {
+  const bind = bindings()
+  bind.accounts.set('user-1', 'account-7')
+  const ctx = { http: async (url: string) => url.endsWith('/oauth/token')
+    ? { status: 200, data: { access_token: 'read-token', expires_in: 300 } }
+    : { status: 403, data: { message: '该用户未同意用户协议' } },
+  } as unknown as Context
+  const oauth = new DivingFishOAuth(ctx, credentials, bind)
+  const provider = new DivingFishProvider({ ctx, oauth, config: {} as Config,
+    data: { musics: new Map() } as any, repositories: {} as any })
+  try {
+    await assert.rejects(provider.getPlayerRecords({ type: 'username', username: 'other' }, []),
+      ProviderPrivacyError)
+    const chain = new ProviderChain({
+      data: { musics: new Map() } as any,
+      repositories: { setting: { get: async () => null } } as any,
+      providers: {
+        divingFish: { id: 'diving-fish', getPlayerRecords: async () => {
+          throw new ProviderTransportError('diving-fish')
+        } } as any,
+        lxns: { id: 'lxns', getPlayerRecords: async () => {
+          throw new ProviderOAuthRequiredError('lxns')
+        } } as any,
+      },
+    })
+    await assert.rejects(chain.records({ type: 'username', username: 'other' }, []),
+      ProviderTransportError)
+    const fallback = new ProviderChain({
+      data: { musics: new Map() } as any,
+      repositories: { setting: { get: async () => null } } as any,
+      providers: {
+        divingFish: { id: 'diving-fish', getPlayerRecords: async () => {
+          throw new ProviderOAuthRequiredError('diving-fish')
+        } } as any,
+        lxns: { id: 'lxns', getPlayerRecords: async () =>
+          new RecordsResponse(new PlayerInfo('Player', 15000), null, []) } as any,
+      },
+    })
+    const result = await fallback.records({ type: 'qq', qq: '123456',
+      userId: 'user-1', isSelf: true }, [])
+    assert.equal(result.provider.id, 'lxns')
+  } finally {
+    oauth.dispose()
   }
 })

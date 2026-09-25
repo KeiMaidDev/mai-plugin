@@ -3,12 +3,16 @@ import {
   ProviderBindingRequiredError,
   ProviderAmbiguousTargetError,
   ProviderConfigurationError,
+  ProviderConsentScopeError,
+  ProviderMalformedPayloadError,
   ProviderNoDataError,
   ProviderNotFoundError,
   ProviderOAuthRequiredError,
   ProviderPrivacyError,
   ProviderRateLimitError,
   ProviderScopeError,
+  ProviderTimeoutError,
+  ProviderTransportError,
   ProviderUnsupportedError,
 } from '../providers/errors'
 import {
@@ -31,8 +35,11 @@ export type QueryErrorCode =
   | 'unknown'
   | 'provider-config'
   | 'provider-scope'
+  | 'consent-scope'
   | 'provider-limit'
   | 'target-ambiguous'
+  | 'provider-malformed'
+  | 'provider-transport'
 
 export interface TextFallbackElement {
   type: 'text'
@@ -85,8 +92,11 @@ const messages: Record<QueryErrorCode, string> = {
   unknown: '查询失败，请重试，或发送“/mai”返回帮助。',
   'provider-config': '水鱼 OAuth 客户端配置无效，请联系部署者检查客户端 ID 和密钥。',
   'provider-scope': '水鱼应用缺少成绩读取权限，请联系部署者确认 prober.records.read 已获批。',
+  'consent-scope': '水鱼账号授权未包含成绩读取权限，请发送“/mai 绑定水鱼”重新授权。',
   'provider-limit': '水鱼请求已达限额，请稍后重试。',
   'target-ambiguous': '该 QQ 号关联了多个已授权水鱼账号，无法确定查询目标。',
+  'provider-malformed': '查分器返回的数据格式异常，请稍后重试或联系部署者。',
+  'provider-transport': '暂时无法连接查分器，请稍后重试。',
 }
 
 function errorMessage(code: QueryErrorCode, text = messages[code]): QueryErrorMessage {
@@ -103,8 +113,13 @@ export function mapQueryError(
   if (error instanceof QueryTargetBindingRequiredError) return errorMessage('target-qq-unbound')
   if (error instanceof ProviderConfigurationError) return errorMessage('provider-config')
   if (error instanceof ProviderScopeError) return errorMessage('provider-scope')
+  if (error instanceof ProviderConsentScopeError) return errorMessage('consent-scope')
   if (error instanceof ProviderRateLimitError) return errorMessage('provider-limit')
   if (error instanceof ProviderAmbiguousTargetError) return errorMessage('target-ambiguous')
+  if (error instanceof ProviderMalformedPayloadError) return errorMessage('provider-malformed')
+  if (error instanceof ProviderTimeoutError || error instanceof ProviderTransportError) {
+    return errorMessage('provider-transport')
+  }
   if (error instanceof ProviderBindingRequiredError) return errorMessage('provider-unbound')
   if (error instanceof ProviderNotFoundError) return errorMessage('player-not-found')
   if (error instanceof ProviderPrivacyError) {
@@ -117,7 +132,9 @@ export function mapQueryError(
     return errorMessage('unsupported', error.message || messages.unsupported)
   }
   if (error instanceof ProviderOAuthRequiredError) return errorMessage('oauth-required',
-    context.isSelf === false ? '目标玩家尚未授权本应用读取水鱼成绩，请由目标玩家发送“/mai 绑定水鱼”。' : undefined)
+    context.isSelf === false && error.provider === 'diving-fish'
+      ? '目标玩家尚未授权本应用读取水鱼成绩，请由目标玩家发送“/mai 绑定水鱼”。'
+      : undefined)
   return errorMessage('unknown')
 }
 
