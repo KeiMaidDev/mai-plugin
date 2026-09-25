@@ -269,6 +269,37 @@ test('settings authorization checks reuse the token and preserve partial binding
   }
 })
 
+test('a failed combined-scope check does not block a concurrent read query', async () => {
+  const bind = bindings()
+  bind.accounts.set('user-1', 'account-7')
+  let finishCombined!: (value: unknown) => void
+  let combinedStarted!: () => void
+  const started = new Promise<void>(resolve => { combinedStarted = resolve })
+  const scopes: string[] = []
+  const ctx = { http: async (_url: string, options: { data: URLSearchParams }) => {
+    const scope = options.data.get('scope') ?? ''
+    scopes.push(scope)
+    if (scope === 'prober.records.read prober.records.write') {
+      combinedStarted()
+      return new Promise(resolve => { finishCombined = resolve })
+    }
+    return { status: 200, data: { access_token: 'read-token', expires_in: 300 } }
+  } } as unknown as Context
+  const oauth = new DivingFishOAuth(ctx, credentials, bind)
+  try {
+    const status = oauth.hasActiveAuthorization('user-1')
+    await started
+    assert.equal(await oauth.accessToken('sub:account-7', 'prober.records.read'), 'read-token')
+    finishCombined({ status: 400, data: {
+      error: 'consent_required', error_description: 'scope not granted',
+    } })
+    assert.equal(await status, false)
+    assert.deepEqual(scopes, ['prober.records.read prober.records.write', 'prober.records.read'])
+  } finally {
+    oauth.dispose()
+  }
+})
+
 test('stale revocation check cannot remove a newer account binding', async () => {
   const bind = bindings()
   bind.accounts.set('user-1', 'account-7')

@@ -252,7 +252,7 @@ export class DivingFishOAuth {
     const cached = [this.tokens.get(key), scope === SCOPES ? undefined : this.tokens.get(combinedKey)]
       .find(token => token && token.expiresAt - 30_000 > this.now())
     if (cached) return cached.value
-    const running = this.exchanges.get(key) ?? (scope === SCOPES ? undefined : this.exchanges.get(combinedKey))
+    const running = this.exchanges.get(key)
     if (running) return running
     const generation = this.generations.get(subject) ?? 0
     const exchange = (async () => {
