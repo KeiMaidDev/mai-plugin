@@ -1,6 +1,5 @@
 import type { Node } from '@takumi-rs/helpers'
 import type { MaimaiDataStore } from '../data/sync-service'
-import { Rate } from '../domain/enums'
 import type { RecordEntry } from '../domain/music'
 import type { PlayerInfo, PlayerSettings } from '../domain/player'
 import { DeluxeScore, Rating } from '../domain/rating'
@@ -29,6 +28,7 @@ export interface RatingRenderInput {
   newRecords: readonly RecordEntry[]
   oldCount?: number
   newCount?: number
+  newGroupDisabled?: boolean
   rating?: number
   title?: string
 }
@@ -53,13 +53,16 @@ function countOf(value: number | undefined, fallback: number, name: string) {
   return count
 }
 
-function textAt(text: string, x: number, y: number, width: number, height: number, fontSize: number, color: string) {
+function textAt(text: string, x: number, y: number, width: number, height: number, fontSize: number,
+  color: string, font: { family?: string; weight?: number; outline?: boolean } = {}) {
   return createTextNode({
     text,
     style: {
       position: 'absolute', left: x, top: y, width, height,
       overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-      fontSize, fontWeight: 700, lineHeight: 1.1, color,
+      fontSize, fontWeight: font.weight ?? 700, fontFamily: font.family ?? MAIMAI_RENDER_THEME.fontFamily,
+      lineHeight: 1.1, color,
+      ...(font.outline ? { textShadow: '1px 0 0 #ffffff, -1px 0 0 #ffffff, 0 1px 0 #ffffff, 0 -1px 0 #ffffff' } : {}),
     },
   })
 }
@@ -105,8 +108,9 @@ async function header(input: RatingRenderInput, title: string, rating: number, o
     imageAt(plate, 47, 36, 773, 125),
     imageAt(avatar, 55, 44, 108, 108),
     ...staticNodes,
-    textAt(input.player.nickname || 'maimai player', 178, 88, 181, 34, 25, '#24232d'),
-    textAt(title, 170, 134, 281, 20, 14, '#34343d'),
+    textAt(input.player.nickname || 'maimai player', 178, 88, 181, 34, 27, '#24232d',
+      { family: 'FZLanTingHei-B-GBK' }),
+    textAt(title, 170, 134, 281, 20, 14, '#444444', { outline: true }),
   ]
 }
 
@@ -118,7 +122,8 @@ async function card(record: RecordEntry | undefined, section: 'old' | 'new', ind
   if (record) {
     const cover = await service.loadAsset(data.coverPath(record.music.resourceId), resolvePackageAssetPath('fallback/cover.png'))
     const stars = DeluxeScore.stars(record.deluxeScore, record.chart.maxDeluxeScore)
-    const score = Rate.toString(record.achievement)
+    const achievement = Math.floor(record.achievement / 10_000)
+    const decimal = `.${String(record.achievement % 10_000).padStart(4, '0')}`
     const status = await Promise.all([
       artwork(service, `type_${record.music.type.value}`, 15, 12, 19, record.music.type.value === 'DX' ? 13 : 10),
       artwork(service, `icon_dxstar_${stars}`, 175, 8, 50, 11),
@@ -130,10 +135,25 @@ async function card(record: RecordEntry | undefined, section: 'old' | 'new', ind
       imageAt(cover, 13, 10, 72, 72),
       ...status,
       textAt(`#${index + 1} ${record.music.id}`, 91, 8, 82, 14, 10, '#ffffff'),
-      textAt(record.music.name, 91, 22, 137, 16, 12, '#ffffff'),
-      textAt(score, 90, 40, 139, 22, score.length > 9 ? 18 : 20, '#ffffff'),
-      textAt(`${record.chart.levelValue.toFixed(1)}→${record.rating}`, 90, 78, 59, 16, 11,
-        MAIMAI_DIFFICULTY_COLORS[base as MaimaiDifficultyName] ?? MAIMAI_RENDER_THEME.colors.text),
+      textAt(record.music.name, 91, 22, 137, 16, 12, '#ffffff',
+        { family: 'AlibabaPuHuiTi3,FZLanTingHei-B-GBK' }),
+      createContainerNode({
+        style: {
+          position: 'absolute', left: 90, top: 27, width: 139, height: 35,
+          display: 'flex', alignItems: 'flex-end', overflow: 'hidden', whiteSpace: 'nowrap',
+        },
+        children: [
+          createTextNode({ text: String(achievement), style: { fontFamily: MAIMAI_RENDER_THEME.fontFamily,
+            fontWeight: 900, fontSize: 30, lineHeight: 1, color: '#ffffff' } }),
+          createTextNode({ text: decimal, style: { fontFamily: MAIMAI_RENDER_THEME.fontFamily,
+            fontWeight: 900, fontSize: 24, lineHeight: 1, color: '#ffffff' } }),
+          createTextNode({ text: '%', style: { fontFamily: MAIMAI_RENDER_THEME.fontFamily,
+            fontWeight: 900, fontSize: 18, lineHeight: 1, color: '#ffffff' } }),
+        ],
+      }),
+      textAt(`${record.chart.levelValue.toFixed(1)}→${record.rating}`, 90, 76, 59, 17, 12,
+        MAIMAI_DIFFICULTY_COLORS[base as MaimaiDifficultyName] ?? MAIMAI_RENDER_THEME.colors.text,
+        { weight: 900, outline: true }),
     )
   }
   return createContainerNode({
@@ -165,27 +185,30 @@ export async function createRatingRenderPlan(input: RatingRenderInput, service: 
   const title = input.title ?? `[${input.backend}] B${oldCount} ${oldRating} + B${newCount} ${newRating} = ${rating}`
   const oldRows = Math.ceil(oldCount / CARD_COLUMNS)
   const dividerY = CARD_Y + oldRows * CARD_STEP_Y
-  const newY = dividerY + (newCount ? DIVIDER_HEIGHT : 0)
+  const dividerHeight = newCount ? input.newGroupDisabled ? 30 : DIVIDER_HEIGHT : 0
+  const newY = dividerY + dividerHeight
   const [background, headerNodes, oldCards, newCards, divider] = await Promise.all([
     artwork(service, 'background', 0, 0, 1280, 1280),
     header(input, title, rating, oldCount, newCount, service, data),
     cards(input.oldRecords, 'old', oldCount, CARD_Y, service, data),
     cards(input.newRecords, 'new', newCount, newY, service, data),
-    newCount ? artwork(service, 'icon_b15', 587, dividerY, 105, 73) : Promise.resolve(undefined),
+    newCount ? artwork(service, input.newGroupDisabled ? 'icon_no_b15' : 'icon_b15',
+      587, dividerY, 105, dividerHeight) : Promise.resolve(undefined),
   ])
-  const titleBand = createContainerNode({
-    id: 'rating-title',
-    style: {
-      position: 'absolute', left: CARD_X, top: 163, width: 1194, height: 22,
-      overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.86)',
-    },
-    children: [textAt(title, 8, 2, 1178, 19, 14, '#243c55')],
-  })
-  const children: Node[] = [background, ...headerNodes, titleBand, ...oldCards]
+  const children: Node[] = [background, ...headerNodes, ...oldCards]
   if (divider) children.push(divider)
   children.push(...newCards, createContainerNode({
     id: 'rating-footer',
     style: { position: 'absolute', left: 0, top: FOOTER_Y, width: 1280, height: 45, backgroundColor: '#013162' },
+    children: [createTextNode({
+      text: '可怜Bot 9.0 by 心水湛清 617 | https://bot-docs.otmdb.cn',
+      style: {
+        position: 'absolute', left: 0, top: 10, width: 1280, height: 30,
+        textAlign: 'center', whiteSpace: 'nowrap', fontFamily: MAIMAI_RENDER_THEME.fontFamily,
+        fontWeight: 900, fontSize: 22, lineHeight: 1.1, color: '#ffffff',
+        textShadow: '1px 1px 0 #000000',
+      },
+    })],
   }))
   return {
     width: RATING_TEMPLATE_SIZE.width,

@@ -7,8 +7,9 @@ import { RenderAssetCache, resolvePackageAssetPath } from './assets'
 import { MAIMAI_RENDER_THEME } from './theme'
 import type { DebugTracer } from '../utils/debug'
 
-const REGULAR_FONT_PATH = resolvePackageAssetPath('fonts/NotoSansSC-Regular.otf')
-const BOLD_FONT_PATH = resolvePackageAssetPath('fonts/NotoSansSC-Bold.otf')
+const FZ_FONT_PATH = resolvePackageAssetPath('fonts/FZLanTingHei-B-GBK.ttf')
+const BOLD_FONT_PATH = resolvePackageAssetPath('fonts/AlibabaPuHuiTi-3-85-Bold.otf')
+const HEAVY_FONT_PATH = resolvePackageAssetPath('fonts/AlibabaPuHuiTi-3-105-Heavy.otf')
 
 export { RENDER_QUEUE_FULL_MESSAGE }
 
@@ -240,19 +241,32 @@ export class TakumiRenderService {
   }
 
   private async registerFonts() {
-    const [regular, bold] = await Promise.all([
-      readFile(REGULAR_FONT_PATH),
+    const [fz, bold, heavy] = await Promise.all([
+      readFile(FZ_FONT_PATH),
       readFile(BOLD_FONT_PATH),
+      readFile(HEAVY_FONT_PATH),
     ])
     await this.renderer.registerFont({
       name: MAIMAI_RENDER_THEME.fontFamily,
-      data: regular,
+      data: bold,
       weight: 400,
       style: 'normal',
     })
     await this.renderer.registerFont({
       name: MAIMAI_RENDER_THEME.fontFamily,
       data: bold,
+      weight: 700,
+      style: 'normal',
+    })
+    await this.renderer.registerFont({
+      name: MAIMAI_RENDER_THEME.fontFamily,
+      data: heavy,
+      weight: 900,
+      style: 'normal',
+    })
+    await this.renderer.registerFont({
+      name: 'FZLanTingHei-B-GBK',
+      data: fz,
       weight: 700,
       style: 'normal',
     })

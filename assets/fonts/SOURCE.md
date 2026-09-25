@@ -1,19 +1,14 @@
-# Noto Sans SC Font Sources
+# Font Sources
 
-These files are unmodified OpenType font data from the official
-[`notofonts/noto-cjk`](https://github.com/notofonts/noto-cjk) repository at
-commit `f8d157532fbfaeda587e826d4cd5b21a49186f7c`.
+## KarenBot rating fonts
 
-| Packaged file | Official source file | SHA-256 |
+These files were supplied locally for the KarenBot-style Rating images. The
+FZLanTingHei file reports the internal family names `FZLanTingHei-B-GBK` and
+`方正兰亭粗黑_GBK`. The Alibaba PuHuiTi 3.0 Bold and Heavy faces are the selected
+substitutes for the B and H faces referenced by KarenBot.
+
+| Packaged file | Supplied file | SHA-256 |
 | --- | --- | --- |
-| `NotoSansSC-Regular.otf` | `Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf` | `2c76254f6fc379fddfce0a7e84fb5385bb135d3e399294f6eeb6680d0365b74b` |
-| `NotoSansSC-Bold.otf` | `Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Bold.otf` | `b5f0d1a190a7f9b43c310a8850630af12553df32c4c050543f9059732d9b4c0a` |
-
-Upstream URLs:
-
-- https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf
-- https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Bold.otf
-- https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/LICENSE
-
-The fonts are licensed under the SIL Open Font License 1.1. The upstream
-license text is included unchanged as `OFL.txt`.
+| `FZLanTingHei-B-GBK.ttf` | `C:\Users\Administrator\Downloads\FZLanTingHei-B-GBK.ttf` | `4107ff3ec36dc58505720664a367b14ecae107f7f7bcffca083f65aeac4f8bcf` |
+| `AlibabaPuHuiTi-3-85-Bold.otf` | `AlibabaPuHuiTi-3.zip`, `85-Bold` | `f75a885212d5576378b9b02859237309bcdee4ec01839a20dc184dc41e42689b` |
+| `AlibabaPuHuiTi-3-105-Heavy.otf` | `AlibabaPuHuiTi-3.zip`, `105-Heavy` | `f2e848f94ac746f5a51ef1d71caea5cc268c920a9a63740423ee61abeac89bd6` |

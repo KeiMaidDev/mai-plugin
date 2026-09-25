@@ -6,3 +6,4 @@
 *.gif -text
 *.webp -text
 *.otf -text
+*.ttf -text

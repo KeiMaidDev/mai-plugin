@@ -125,6 +125,7 @@ function ratingRenderInput(
   oldRecords: readonly RecordEntry[],
   newRecords: readonly RecordEntry[],
   total: number,
+  newGroupDisabled = false,
 ) {
   const { oldCount, newCount } = ratingCounts(total)
   const legacy = total < 50
@@ -146,6 +147,7 @@ function ratingRenderInput(
     newRecords: selectedNew,
     oldCount,
     newCount,
+    newGroupDisabled,
     rating,
     title: `[${backend}] B${oldCount} ${oldRating} + B${newCount} ${newRating}${coursePart} = ${rating}`,
   }
@@ -339,6 +341,7 @@ export function registerImageCommands(
             split.oldRecords,
             split.newRecords,
             total,
+            selected.filters.some(filter => filter.disable15),
           ))
         }
       } catch (error) {

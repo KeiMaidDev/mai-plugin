@@ -1,3 +1,8 @@
+# Rating artwork
+
+The PNG files in this directory come from `xszqxszq/KarenBot-Resources`,
+`templates/rating`. They are redistributed under the MIT license below.
+
 MIT License
 
 Copyright (c) 2026 xszqxszq

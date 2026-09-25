@@ -11,6 +11,6 @@ const colors = Object.freeze({
 })
 
 export const MAIMAI_RENDER_THEME = Object.freeze({
-  fontFamily: 'Noto Sans SC',
+  fontFamily: 'AlibabaPuHuiTi3',
   colors,
 })

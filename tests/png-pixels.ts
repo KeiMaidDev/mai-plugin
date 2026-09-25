@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict'
 import { inflateSync } from 'node:zlib'
 
-export function pngPixel(image: Buffer, targetX: number, targetY: number): [number, number, number, number] {
+export function pngRow(image: Buffer, targetY: number): Buffer {
   const width = image.readUInt32BE(16)
   const height = image.readUInt32BE(20)
   assert.equal(image[24], 8, 'expected 8-bit PNG')
   assert.equal(image[25], 6, 'expected RGBA PNG')
-  assert.ok(targetX >= 0 && targetX < width && targetY >= 0 && targetY < height)
+  assert.ok(targetY >= 0 && targetY < height)
   const chunks: Buffer[] = []
   for (let offset = 8; offset < image.length;) {
     const length = image.readUInt32BE(offset)
@@ -34,6 +34,12 @@ export function pngPixel(image: Buffer, targetX: number, targetY: number): [numb
       pixels[row * stride + column] = (scanlines[source + 1 + column] + reconstruction) & 255
     }
   }
-  const position = targetY * stride + targetX * 4
-  return [pixels[position], pixels[position + 1], pixels[position + 2], pixels[position + 3]]
+  return pixels.subarray(targetY * stride, (targetY + 1) * stride)
+}
+
+export function pngPixel(image: Buffer, targetX: number, targetY: number): [number, number, number, number] {
+  assert.ok(targetX >= 0 && targetX < image.readUInt32BE(16))
+  const row = pngRow(image, targetY)
+  const position = targetX * 4
+  return [row[position], row[position + 1], row[position + 2], row[position + 3]]
 }
