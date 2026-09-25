@@ -127,9 +127,9 @@ async function card(record: RecordEntry | undefined, section: 'old' | 'new', ind
     const status = await Promise.all([
       artwork(service, `type_${record.music.type.value}`, 15, 12, 19, record.music.type.value === 'DX' ? 13 : 10),
       artwork(service, `icon_dxstar_${stars}`, 175, 8, 50, 11),
-      artwork(service, `rank_${record.rate}`, 148, 78, 40, 16),
-      artwork(service, `icon_${record.comboStatus.value}`, 186, 77, 19, 19),
-      artwork(service, `icon_${record.syncStatus.value}`, 207, 77, 19, 19),
+      artwork(service, `rank_${record.rate}`, 148, 66, 40, 16),
+      artwork(service, `icon_${record.comboStatus.value}`, 186, 65, 19, 19),
+      artwork(service, `icon_${record.syncStatus.value}`, 207, 65, 19, 19),
     ])
     children.push(
       imageAt(cover, 13, 10, 72, 72),
@@ -151,7 +151,7 @@ async function card(record: RecordEntry | undefined, section: 'old' | 'new', ind
             fontWeight: 900, fontSize: 18, lineHeight: 1, color: '#ffffff' } }),
         ],
       }),
-      textAt(`${record.chart.levelValue.toFixed(1)}→${record.rating}`, 90, 76, 59, 17, 12,
+      textAt(`${record.chart.levelValue.toFixed(1)}→${record.rating}`, 90, 66, 59, 17, 10,
         MAIMAI_DIFFICULTY_COLORS[base as MaimaiDifficultyName] ?? MAIMAI_RENDER_THEME.colors.text,
         { weight: 900, outline: true }),
     )

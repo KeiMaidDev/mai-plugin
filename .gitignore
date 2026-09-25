@@ -2,6 +2,7 @@ lib
 dist
 external
 docs
+tests
 
 node_modules
 npm-debug.log
@@ -17,3 +18,4 @@ yarn-error.log
 *.ntvs*
 *.njsproj
 *.sln
+.scratch

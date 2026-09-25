@@ -120,3 +120,24 @@ test('disabled new group uses the compact reference divider', async () => {
     await service.dispose()
   }
 })
+
+test('record details stay inside the card artwork border', async () => {
+  const service = new TakumiRenderService()
+  const renderer = new TakumiMaiRenderer(service, data)
+  const input = {
+    backend: 'test', player: new PlayerInfo('Player', 15384),
+    newRecords: [], oldCount: 1, newCount: 0,
+  }
+  try {
+    const populated = await renderer.renderRating({ ...input, oldRecords: [record] })
+    const empty = await renderer.renderRating({ ...input, oldRecords: [] })
+    for (let y = 277; y < 283; y++) {
+      const start = 43 * 4
+      const end = 284 * 4
+      assert.ok(pngRow(populated, y).subarray(start, end).equals(pngRow(empty, y).subarray(start, end)),
+        `record details should not paint below the card border at y=${y}`)
+    }
+  } finally {
+    await service.dispose()
+  }
+})
