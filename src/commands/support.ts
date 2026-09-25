@@ -85,7 +85,7 @@ export interface CoreCommandDependencies {
     | 'getBindingStatus'
     | 'unbindLxns'
     | 'unbindDivingFish'
-    | 'bindDivingFishToken'
+    | 'beginDivingFishOAuth'
     | 'completeLxnsOAuth'
     | 'createUpdateRedirect'
     | 'completeDivingFishUpdate'
@@ -222,7 +222,7 @@ export async function replyQueryError(
   error: unknown,
   isSelf = true,
 ) {
-  if (isSelf && error instanceof ProviderOAuthRequiredError && dependencies.updateService) {
+  if (isSelf && error instanceof ProviderOAuthRequiredError && error.provider === 'lxns' && dependencies.updateService) {
     try {
       const url = await dependencies.updateService.beginLxnsOAuth({
         userId: session.userId,
@@ -284,9 +284,8 @@ export async function replyQueryError(
               id: 'oauth-bind-diving-fish',
               label: '绑定水鱼',
               command: '/mai 绑定水鱼',
-              enter: false,
+              enter: true,
               reply: false,
-              unsupportTips: '请在正文命令后补充水鱼导入 Token 并手动发送。',
             },
           ]]),
         )
@@ -333,9 +332,8 @@ export async function replyQueryError(
         id: 'bind-diving-fish',
         label: '绑定水鱼',
         command: '/mai 绑定水鱼',
-        enter: false,
+        enter: true,
         reply: false,
-        unsupportTips: '请在正文命令后补充水鱼导入 Token 并手动发送。',
       },
     ]]))
     return

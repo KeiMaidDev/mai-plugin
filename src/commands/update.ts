@@ -1,4 +1,6 @@
 import type { Context } from 'koishi'
+import { DivingFishOAuthError } from '../providers/diving-fish-oauth'
+import { ProviderOAuthRequiredError, ProviderRateLimitError, ProviderScopeError } from '../providers/errors'
 import {
   PublicCallbackUnavailableError,
   UpdateBindingRequiredError,
@@ -18,7 +20,7 @@ export type UpdateServicePort = Pick<
   UpdateService,
   | 'beginDivingFishUpdate'
   | 'beginLxnsOAuth'
-  | 'bindDivingFishToken'
+  | 'beginDivingFishOAuth'
   | 'unbindLxns'
   | 'unbindDivingFish'
 >
@@ -83,22 +85,30 @@ async function updateFailure(
         id: 'update-bind-diving-fish',
         label: '绑定水鱼',
         command: '/mai 绑定水鱼',
-        enter: false,
+        enter: true,
         reply: false,
-        unsupportTips: '请在正文命令后补充水鱼导入 Token 并手动发送。',
       },
     ]]))
     return
   }
-  if (error instanceof UpdateBindingRequiredError) {
+  if (error instanceof UpdateBindingRequiredError || error instanceof ProviderOAuthRequiredError
+    || error instanceof DivingFishOAuthError && error.code === 'consent_required') {
     await replyText(session, dependencies, error.message, createQqCommandGuidance(error.message, [[{
-      id: 'bind-diving-fish-token',
-      label: '填写水鱼 Token',
+      id: 'bind-diving-fish-oauth',
+      label: '授权水鱼',
       command: '/mai 绑定水鱼',
-      enter: false,
+      enter: true,
       reply: false,
-      unsupportTips: '请在正文命令后补充水鱼导入 Token 并手动发送。',
     }]]))
+    return
+  }
+  if (error instanceof DivingFishOAuthError || error instanceof ProviderScopeError || error instanceof ProviderRateLimitError) {
+    const text = error instanceof ProviderRateLimitError || error instanceof DivingFishOAuthError && error.code === 'slow_down'
+      ? '水鱼授权请求过于频繁，请稍后重试。'
+      : error instanceof ProviderScopeError || error instanceof DivingFishOAuthError && error.code === 'invalid_scope'
+        ? '水鱼应用缺少成绩读写权限，请联系部署者确认权限已获批。'
+        : '水鱼 OAuth 配置无效或应用不可用，请联系部署者检查客户端 ID 和密钥。'
+    await replyText(session, dependencies, text)
     return
   }
   const text = '更新失败，请稍后重试。'
@@ -151,16 +161,16 @@ export function registerUpdateCommands(
           await updateFailure(session, dependencies, error, '/mai 解绑落雪')
         }
       })),
-    ctx.command('mai.unbind-diving-fish', '解绑水鱼成绩导入 Token')
+    ctx.command('mai.unbind-diving-fish', '解绑水鱼账号授权')
       .alias('mai.解绑水鱼')
       .action(commandAction(async ({ session }) => {
         try {
           await dependencies.updateService.unbindDivingFish(session.userId)
-          await replyText(
-            session,
-            dependencies,
-            '水鱼成绩导入 Token 解绑成功。需要时可重新发送“/mai 绑定水鱼 <Token>”。',
-          )
+          const text = '已清除本地水鱼账号关联。若要撤销远端授权，请前往水鱼账号设置页。'
+          await replyText(session, dependencies, text, createQqUrlGuidance(text, {
+            id: 'diving-fish-settings', label: '水鱼账号设置',
+            visitedLabel: '重新打开水鱼账号设置', url: 'https://auth.diving-fish.com/apps',
+          }))
         } catch (error) {
           await updateFailure(session, dependencies, error, '/mai 解绑水鱼')
         }
@@ -175,18 +185,24 @@ export function registerUpdateCommands(
           await replyText(
             session,
             dependencies,
-            `${url}\n请连接代理后在微信中打开该链接。请自行确认第三方服务条款与网络合规性。`,
+            `${url}\n请在微信中打开该链接完成成绩更新。`,
           )
         } catch (error) {
           await updateFailure(session, dependencies, error, '/mai 更新')
         }
       })),
-    ctx.command('mai.bind-diving-fish <token:text>', '绑定水鱼成绩导入 Token')
+    ctx.command('mai.bind-diving-fish', '绑定水鱼账号授权')
       .alias('mai.绑定水鱼')
-      .action(commandAction(async ({ session }, token = '') => {
+      .action(commandAction(async ({ session }) => {
         try {
-          await dependencies.updateService.bindDivingFishToken(session.userId, token)
-          await replyText(session, dependencies, '水鱼token绑定成功。')
+          const { url, code } = await dependencies.updateService.beginDivingFishOAuth(
+            createUpdateSessionLocator(session, dependencies, ''),
+          )
+          const text = `请打开水鱼授权页面并输入用户码 ${code}。无法使用按钮时请复制链接：\n${url}`
+          await replyText(session, dependencies, text, createQqUrlGuidance(text, {
+            id: 'diving-fish-oauth', label: '前往水鱼授权',
+            visitedLabel: '重新前往水鱼授权', url,
+          }))
         } catch (error) {
           await updateFailure(session, dependencies, error)
         }

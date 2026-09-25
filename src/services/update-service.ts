@@ -7,6 +7,8 @@ import { resolveLxnsCallbackPath } from '../server/lxns-callback'
 import { load } from 'cheerio'
 import type { Context } from 'koishi'
 import type { DebugTracer } from '../utils/debug'
+import type { DivingFishOAuth } from '../providers/diving-fish-oauth'
+import { ProviderOAuthRequiredError, ProviderRateLimitError, ProviderScopeError, ProviderPrivacyError } from '../providers/errors'
 
 const WAHLAP_ORIGIN = 'https://tgk-wcaime.wahlap.com'
 const LXNS_AUTHORIZE_ORIGIN = 'https://maimai.lxns.net'
@@ -27,7 +29,7 @@ export class PublicCallbackUnavailableError extends Error {
 
 export class UpdateBindingRequiredError extends Error {
   constructor() {
-    super('请填写水鱼查询token完成绑定。')
+    super('请先发送“/mai 绑定水鱼”完成账号授权。')
     this.name = 'UpdateBindingRequiredError'
   }
 }
@@ -67,18 +69,12 @@ export interface UpdateServiceOptions {
     removeOAuthToken(userId: string): Promise<void>
     hasOAuthToken(userId: string): Promise<boolean>
   }
-  bind: {
-    getImportToken(userId: string): Promise<string | null>
-    setImportToken(userId: string, token: string): Promise<void>
-    hasImportToken(userId: string): Promise<boolean>
-    removeImportToken(userId: string): Promise<void>
-  }
+  divingFishOAuth: Pick<DivingFishOAuth, 'begin' | 'hasBinding' | 'unbind' | 'dispose'>
   fetchAuthorizationRedirect(): Promise<string>
   fetchDivingFishRecords(callbackUrl: string): Promise<DivingFishImportRecord[]>
   importDivingFishRecords(
     userId: string,
     records: DivingFishImportRecord[],
-    importToken: string,
   ): Promise<DivingFishUpdateResponse>
   lxnsStates?: CallbackStore<LxnsState>
   updateTokens?: CallbackStore<DivingFishState>
@@ -395,23 +391,22 @@ export class UpdateService {
     this.updateTokens = options.updateTokens ?? new CallbackStore<DivingFishState>()
   }
 
-  async bindDivingFishToken(userId: string, rawToken: string) {
-    const token = rawToken.trim()
-    if (!token || token.length > 512) throw new UpdateBindingRequiredError()
-    await this.options.bind.setImportToken(userId, token)
+  async beginDivingFishOAuth(session: UpdateSessionLocator) {
+    this.assertActive()
+    return this.options.divingFishOAuth.begin(session)
   }
 
   async getBindingStatus(userId: string) {
     const [lxns, divingFish] = await Promise.all([
       this.options.lxns.hasOAuthToken(userId),
-      this.options.bind.hasImportToken(userId),
+      this.options.divingFishOAuth.hasBinding(userId),
     ])
     return { lxns, divingFish }
   }
 
   async unbindDivingFish(userId: string) {
     this.assertActive()
-    await this.options.bind.removeImportToken(userId)
+    await this.options.divingFishOAuth.unbind(userId)
   }
 
   async beginLxnsOAuth(session: UpdateSessionLocator) {
@@ -501,7 +496,7 @@ export class UpdateService {
       publicBaseUrl: this.options.publicBaseUrl,
       updateRoute,
     })
-    if (!await this.options.bind.getImportToken(session.userId)) {
+    if (!await this.options.divingFishOAuth.hasBinding(session.userId)) {
       throw new UpdateBindingRequiredError()
     }
     const token = this.updateTokens.issue(session)
@@ -540,27 +535,20 @@ export class UpdateService {
     this.options.debug?.event('update.diving-fish.callback', { token, callbackPath })
     const session = this.updateTokens.consume(token)
     const callbackUrl = validateCallbackUrl(callbackPath)
-    const importToken = await this.options.bind.getImportToken(session.userId)
-    if (!importToken) {
-      await session.send('水鱼成绩导入Token已失效，请重新绑定。')
+    if (!await this.options.divingFishOAuth.hasBinding(session.userId)) {
+      await session.send('水鱼账号授权已失效，请重新绑定。')
       throw new UpdateBindingRequiredError()
     }
     await session.send('正在爬取数据中……')
     try {
       const records = await this.options.fetchDivingFishRecords(callbackUrl)
-      const result = await this.options.importDivingFishRecords(
-        session.userId,
-        records,
-        importToken,
-      )
+      const result = await this.options.importDivingFishRecords(session.userId, records)
       await session.send(`更新成功，已更新${result.updates + result.creates}条记录。`)
       this.options.debug?.event('update.diving-fish.success', {
         token,
         callbackPath,
         callbackUrl,
         session,
-        importToken,
-        records,
         result,
       })
     } catch (error) {
@@ -569,9 +557,17 @@ export class UpdateService {
         callbackPath,
         callbackUrl,
         session,
-        importToken,
       })
-      await session.send('更新失败，请稍后重试。')
+      const text = error instanceof ProviderOAuthRequiredError
+        ? '水鱼授权已失效，请发送“/mai 绑定水鱼”重新授权。'
+        : error instanceof ProviderScopeError
+          ? '水鱼应用缺少成绩写入权限，请联系部署者确认 prober.records.write 已获批并重新授权。'
+          : error instanceof ProviderRateLimitError
+            ? '水鱼请求已达限额，请稍后重试。'
+            : error instanceof ProviderPrivacyError
+              ? '水鱼账号尚未同意查分器协议，请先在水鱼账号设置中同意。'
+              : '更新失败，请稍后重试。'
+      await session.send(text)
       throw error
     }
   }
@@ -581,6 +577,7 @@ export class UpdateService {
     this.disposed = true
     this.lxnsStates.dispose()
     this.updateTokens.dispose()
+    this.options.divingFishOAuth.dispose()
   }
 
   private assertActive() {

@@ -34,7 +34,7 @@ export function createQuerySettingsPanel(state: QuerySettingsPanelState) {
     `头像：${state.avatar ?? '默认'}`,
     `牌子：${state.plate ?? '默认'}`,
     `落雪：${state.lxns ? '已绑定' : '未绑定'}`,
-    `水鱼：${state.divingFish ? '已绑定' : '未绑定'}`,
+    `水鱼账号授权：${state.divingFish ? '已授权' : '未授权'}`,
   ].join('\n')
   const rich = createQqCommandGuidance(text, [
     [
@@ -87,8 +87,8 @@ export function createQuerySettingsPanel(state: QuerySettingsPanelState) {
       {
         id: 'query-settings-diving-fish',
         label: state.divingFish ? '解绑水鱼' : '绑定水鱼',
-        command: state.divingFish ? '/mai 解绑水鱼' : '/mai 绑定水鱼 ',
-        enter: state.divingFish,
+        command: state.divingFish ? '/mai 解绑水鱼' : '/mai 绑定水鱼',
+        enter: true,
         reply: false,
       },
     ],

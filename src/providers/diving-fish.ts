@@ -1,17 +1,20 @@
-import type { Config } from '../config'
 import type { DebugTracer } from '../utils/debug'
 import type { MaimaiDataStore } from '../data/sync-service'
-import type { MaiRepositories } from '../database/repositories'
 import { ComboStatus, MusicGenre, Rate, SyncStatus } from '../domain/enums'
 import { RecordEntry, type MusicInfo } from '../domain/music'
-import type { DivingFishRatingResponse, DivingFishRecord } from '../domain/payloads'
+import type { DivingFishRatingResponse, DivingFishRecord, DivingFishRecordsResponse } from '../domain/payloads'
 import { toInternalAchievement } from '../domain/payloads'
 import { PlayerInfo, RatingResponse, RecordsResponse } from '../domain/player'
 import { Rating } from '../domain/rating'
 import {
-  ProviderBindingRequiredError,
+  ProviderAmbiguousTargetError,
+  ProviderConfigurationError,
   ProviderMalformedPayloadError,
   ProviderNoDataError,
+  ProviderOAuthRequiredError,
+  ProviderPrivacyError,
+  ProviderRateLimitError,
+  ProviderScopeError,
   providerResponseError,
 } from './errors'
 import {
@@ -21,12 +24,14 @@ import {
   type ProviderOptions,
   type UserQuery,
 } from './types'
+import { DivingFishOAuth, DivingFishOAuthError } from './diving-fish-oauth'
 
 const DIVING_FISH_BASE = 'https://www.diving-fish.com/api/maimaidxprober'
 
 export const DIVING_FISH_ENDPOINTS = {
   queryPlayer: `${DIVING_FISH_BASE}/query/player`,
-  developerRecords: `${DIVING_FISH_BASE}/dev/player/record`,
+  playerRecord: `${DIVING_FISH_BASE}/player/record`,
+  playerRecords: `${DIVING_FISH_BASE}/player/records`,
   musicData: `${DIVING_FISH_BASE}/music_data`,
   chartStats: `${DIVING_FISH_BASE}/chart_stats`,
   updateRecords: `${DIVING_FISH_BASE}/player/update_records`,
@@ -87,7 +92,9 @@ export interface DivingFishRecordSimple {
 
 export type DivingFishImportRecord = DivingFishRecordSimple
 
-export interface DivingFishProviderOptions extends ProviderOptions {}
+export interface DivingFishProviderOptions extends ProviderOptions {
+  oauth: DivingFishOAuth
+}
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -147,13 +154,20 @@ function parseRatingPayload(value: unknown): DivingFishRatingResponse {
   return value as unknown as DivingFishRatingResponse
 }
 
-function parseDeveloperRecords(value: unknown) {
+function parseSongRecords(value: unknown) {
   if (!isObject(value)) throw new ProviderMalformedPayloadError('diving-fish')
   const values = Object.values(value)
   if (!values.every(records => Array.isArray(records) && records.every(isDivingFishRecord))) {
     throw new ProviderMalformedPayloadError('diving-fish')
   }
   return values.flat() as DivingFishRecord[]
+}
+
+function parseRecordsPayload(value: unknown): DivingFishRecordsResponse {
+  if (!isObject(value) || typeof value.nickname !== 'string' || !isSafeInteger(value.rating)
+    || !isSafeInteger(value.additional_rating) || !Array.isArray(value.records)
+    || !value.records.every(isDivingFishRecord)) throw new ProviderMalformedPayloadError('diving-fish')
+  return value as unknown as DivingFishRecordsResponse
 }
 
 function parseMusicData(value: unknown): DivingFishMusicData[] {
@@ -250,15 +264,13 @@ export class DivingFishProvider implements MaimaiProvider {
   readonly id = 'diving-fish' as const
   readonly name = 'Diving Fish'
   private readonly http: ProviderHttpClient
-  private readonly config: Config
+  private readonly oauth: DivingFishOAuth
   private readonly data: MaimaiDataStore
-  private readonly repositories: MaiRepositories
   private readonly debug?: DebugTracer
 
   constructor(options: DivingFishProviderOptions) {
-    this.config = options.config
+    this.oauth = options.oauth
     this.data = options.data
-    this.repositories = options.repositories
     this.debug = options.debug
     this.http = new ProviderHttpClient(this.id, options.ctx, options.logger, options)
   }
@@ -316,7 +328,7 @@ export class DivingFishProvider implements MaimaiProvider {
     return normalized
   }
 
-  private playerOf(payload: DivingFishRatingResponse) {
+  private playerOf(payload: Pick<DivingFishRatingResponse, 'nickname' | 'rating' | 'additional_rating'>) {
     return new PlayerInfo(
       payload.nickname,
       payload.rating,
@@ -337,22 +349,60 @@ export class DivingFishProvider implements MaimaiProvider {
     return parseRatingPayload(response.data)
   }
 
-  private async developerRecords(user: UserQuery, musics: MusicInfo[]) {
-    const response = await this.http.json({
-      label: 'developer-records',
-      method: 'POST',
-      url: DIVING_FISH_ENDPOINTS.developerRecords,
-      headers: {
-        'Content-Type': 'application/json',
-        'developer-token': this.config.developerTokens.divingFish,
-      },
-      data: this.queryBody(user, {
-        music_id: musics.map(music => String(music.id)),
-      }),
-    })
-    this.assertSuccess(response.status, response.data)
-    if (response.data === null || response.data === undefined) throw new ProviderNoDataError(this.id)
-    return this.normalizeRecords(parseDeveloperRecords(response.data))
+  private async subject(user: UserQuery) {
+    try {
+      if (user.isSelf && user.userId) return await this.oauth.subjectForUser(user.userId)
+      return user.type === 'username'
+        ? `username:${user.username}`
+        : await this.oauth.subjectForQq(String(user.qq))
+    } catch (error) {
+      this.handleOAuthError(error)
+    }
+  }
+
+  private handleOAuthError(error: unknown): never {
+    if (error instanceof DivingFishOAuthError) {
+      if (error.code === 'ambiguous_qq') throw new ProviderAmbiguousTargetError(this.id)
+      if (error.code === 'consent_required') throw new ProviderOAuthRequiredError(this.id)
+      if (error.code === 'invalid_scope') throw new ProviderScopeError(this.id)
+      if (error.code === 'slow_down') throw new ProviderRateLimitError(this.id)
+      if (error.code === 'invalid_client' || error.code === 'not_configured'
+        || error.code === 'unauthorized_client') {
+        throw new ProviderConfigurationError(this.id)
+      }
+    }
+    throw error
+  }
+
+  private async authorizedRequest(subject: string, scope: 'prober.records.read' | 'prober.records.write',
+    method: 'GET' | 'POST', url: string, data?: unknown) {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      let token: string
+      try {
+        token = await this.oauth.accessToken(subject, scope)
+      } catch (error) {
+        this.handleOAuthError(error)
+      }
+      const response = await this.http.json({
+        label: 'authorized-records', method, url,
+        headers: { Authorization: `Bearer ${token!}`, ...(data === undefined ? {} : { 'Content-Type': 'application/json' }) },
+        data,
+      })
+      if (response.status === 401) {
+        this.oauth.invalidate(subject)
+        if (!attempt) continue
+        throw new ProviderOAuthRequiredError(this.id)
+      }
+      if (response.status === 403) {
+        const message = isObject(response.data) ? response.data.message : undefined
+        if (typeof message === 'string' && /权限|scope|permission/i.test(message)) throw new ProviderScopeError(this.id)
+        throw new ProviderPrivacyError(this.id)
+      }
+      if (response.status === 429) throw new ProviderRateLimitError(this.id)
+      this.assertSuccess(response.status, null)
+      return response.data
+    }
+    throw new ProviderOAuthRequiredError(this.id)
   }
 
   async getPlayerRating(user: UserQuery) {
@@ -365,14 +415,21 @@ export class DivingFishProvider implements MaimaiProvider {
     )
   }
 
-  getPlayerRecord(user: UserQuery, music: MusicInfo) {
-    return this.developerRecords(user, [music])
+  async getPlayerRecord(user: UserQuery, music: MusicInfo) {
+    const subject = await this.subject(user)
+    const value = await this.authorizedRequest(subject, 'prober.records.read', 'POST',
+      DIVING_FISH_ENDPOINTS.playerRecord, { music_id: [music.id] })
+    return this.normalizeRecords(parseSongRecords(value))
   }
 
   async getPlayerRecords(user: UserQuery, musics: MusicInfo[]) {
-    const records = await this.developerRecords(user, musics)
-    const payload = await this.ratingPayload(user)
-    return new RecordsResponse(this.playerOf(payload), null, records)
+    const subject = await this.subject(user)
+    const value = await this.authorizedRequest(subject, 'prober.records.read', 'GET',
+      DIVING_FISH_ENDPOINTS.playerRecords)
+    const payload = parseRecordsPayload(value)
+    const ids = new Set(musics.map(music => music.id))
+    return new RecordsResponse(this.playerOf(payload), null,
+      this.normalizeRecords(payload.records.filter(record => ids.has(record.song_id))))
   }
 
   async getMusicData() {
@@ -395,32 +452,17 @@ export class DivingFishProvider implements MaimaiProvider {
     return parseChartStats(response.data)
   }
 
-  async importRecords(
-    userId: string,
-    records: DivingFishImportRecord[],
-    importToken?: string,
-  ) {
+  async importRecords(userId: string, records: DivingFishImportRecord[]) {
     if (!Array.isArray(records) || !records.every(validImportRecord)) {
       throw new ProviderMalformedPayloadError(this.id, 'Diving Fish import records are malformed.')
     }
-    const token = importToken ?? await this.repositories.bind.getImportToken(userId)
-    if (!token) throw new ProviderBindingRequiredError(this.id, 'A Diving Fish import token is required.')
-    const response = await this.http.json({
-      label: 'update-records',
-      method: 'POST',
-      url: DIVING_FISH_ENDPOINTS.updateRecords,
-      headers: {
-        'Content-Type': 'application/json',
-        'Import-Token': token,
-      },
-      data: records,
-    })
-    this.assertSuccess(response.status, response.data)
-    return parseUpdateResponse(response.data)
+    const subject = await this.subject({ type: 'username', username: '', userId, isSelf: true })
+    return parseUpdateResponse(await this.authorizedRequest(subject, 'prober.records.write', 'POST',
+      DIVING_FISH_ENDPOINTS.updateRecords, records))
   }
 
-  updateRecords(userId: string, records: DivingFishImportRecord[], importToken?: string) {
-    return this.importRecords(userId, records, importToken)
+  updateRecords(userId: string, records: DivingFishImportRecord[]) {
+    return this.importRecords(userId, records)
   }
 }
 

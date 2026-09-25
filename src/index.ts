@@ -14,6 +14,7 @@ import { registerMaiDatabaseModels } from './database/models'
 import { MaiRepositories } from './database/repositories'
 import { PlayerSettings } from './domain/player'
 import { DivingFishProvider } from './providers/diving-fish'
+import { DivingFishOAuth } from './providers/diving-fish-oauth'
 import { LxnsProvider } from './providers/lxns'
 import { ProviderChain } from './providers/provider-chain'
 import { TakumiMaiRenderer } from './render/mai-renderer'
@@ -172,12 +173,15 @@ export async function createDefaultCommandDependencies(
   })
   const data = await services.dataSync.startup()
   const repositories = new MaiRepositories(ctx, runtime.config.oauth.tokenCipherKey)
+  await repositories.bind.retireImportTokens()
+  const divingFishOAuth = new DivingFishOAuth(ctx, runtime.config.divingFishOAuth, repositories.bind, logger)
   const providers = {
     divingFish: new DivingFishProvider({
       ctx,
       config: runtime.config,
       data,
       repositories,
+      oauth: divingFishOAuth,
       logger,
       debug,
     }),
@@ -261,7 +265,7 @@ export async function createDefaultCommandDependencies(
     publicBaseUrl: runtime.publicBaseUrl,
     oauth: runtime.config.oauth,
     lxns: providers.lxns,
-    bind: repositories.bind,
+    divingFishOAuth,
     async fetchAuthorizationRedirect() {
       const response = await wahlapRequest(
         'https://tgk-wcaime.wahlap.com/wc_auth/oauth/authorize/maimai-dx',
@@ -274,8 +278,8 @@ export async function createDefaultCommandDependencies(
       return location
     },
     fetchDivingFishRecords: callbackUrl => wahlapFetcher.fetch(callbackUrl),
-    importDivingFishRecords: (userId, records, importToken) => (
-      providers.divingFish.importRecords(userId, records, importToken)
+    importDivingFishRecords: (userId, records) => (
+      providers.divingFish.importRecords(userId, records)
     ),
     debug,
   })

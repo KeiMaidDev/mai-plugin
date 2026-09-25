@@ -15,7 +15,7 @@
 - 查询曲目、谱面、别名、BPM、谱师、曲师、版本和拟合定数。
 - 支持每日推荐、歌曲试听、经典猜歌和舞萌开字母。
 - 支持群聊机厅排卡、机厅别名和排卡人数管理。
-- 支持落雪 OAuth 绑定及水鱼成绩导入更新。
+- 支持落雪 OAuth 与水鱼账号设备码授权，并通过微信成绩抓取更新水鱼成绩。
 - QQ 平台支持原生 Markdown 和按钮，其他平台可回退到普通文本与图片。
 
 
@@ -38,6 +38,8 @@ mai-plugin
 
 需要使用落雪 OAuth 时，请先配置 Koishi Server 的 `selfUrl`，或设置插件的 `publicBaseUrl`。
 
+水鱼详细成绩和更新需要在[水鱼账号开发者控制台](https://auth.diving-fish.com/console)登记机密客户端，配置 `divingFishOAuth.clientId`、`divingFishOAuth.clientSecret`，并获批 `prober.records.read` 与 `prober.records.write`。水鱼设备码授权不需要公网 OAuth 回调；成绩更新仍使用现有的微信回调路由。
+
 ## 查分器绑定
 
 首次查询前，按以下顺序完成设置：
@@ -52,7 +54,7 @@ mai-plugin
 
    ```text
    /mai 绑定落雪
-   /mai 绑定水鱼 <水鱼成绩导入 Token>
+   /mai 绑定水鱼
    ```
 
 3. 打开 查分设置面板：
@@ -69,7 +71,7 @@ mai-plugin
    /mai B50
    ```
 
-落雪绑定会跳转到 OAuth 授权页面。水鱼绑定需要用户自己的成绩导入 Token；插件配置中的水鱼开发者 Token 与用户导入 Token 用途不同。
+落雪绑定会跳转到 OAuth 授权页面。水鱼绑定会返回授权链接和用户码；玩家在网页确认后，BOT 会回复绑定结果。旧 Import-Token 绑定需重新授权，启动时会清理旧 Token 数据，但保留 QQ 与落雪绑定。`/mai 解绑水鱼` 只清除 BOT 的本地关联，远端授权可在[水鱼账号应用页](https://auth.diving-fish.com/apps)撤销。
 
 ## 常用命令
 
@@ -79,7 +81,7 @@ mai-plugin
 | QQ 绑定 | `/mai 绑定 <QQ 号>` |
 | 查分设置面板 | `/mai 查分设置`；别名 `/mai 设置mai`、`/mai 设置b50` |
 | 查分器选择 | `/mai 设置查分器`、`/mai 设置查分器 自动`、`/mai 设置查分器 水鱼`、`/mai 设置查分器 落雪` |
-| 查分器绑定 | `/mai 绑定落雪`、`/mai 解绑落雪`、`/mai 绑定水鱼 <Token>`、`/mai 解绑水鱼` |
+| 查分器绑定 | `/mai 绑定落雪`、`/mai 解绑落雪`、`/mai 绑定水鱼`、`/mai 解绑水鱼` |
 | Rating 图片 | `/mai B15`、`/mai B25`、`/mai B35`、`/mai B40`、`/mai B50` |
 | 单曲成绩 | `/mai info <曲目>`、`/mai minfo <曲目>`、`/mai 紫谱成绩 <曲目>` |
 | 曲目查询 | `/mai id 123`、`/mai 查歌 <关键词>`、`/mai 随个`、`/mai 今日舞萌` |
@@ -92,7 +94,7 @@ mai-plugin
 | 成绩更新 | `/mai 更新`、`/mai 导` |
 | 平台回退 | `/mai 兼容模式`、`/mai 关闭兼容模式` |
 
-查询自己但尚未绑定 QQ 时，插件会暂存原命令，并在绑定成功后自动继续查询。未绑定查分器或未导入成绩时，QQ 平台会提供对应的绑定按钮。
+查询自己但尚未绑定 QQ 时，插件会暂存原命令，并在绑定成功后自动继续查询。公开 B50 可按 QQ 或用户名查询；详细成绩要求目标玩家已授权本应用。QQ 查询若对应多个已授权账号，会要求澄清绑定。QQ 平台会提供相应的绑定按钮。
 
 ## 回调与兼容模式
 
@@ -115,7 +117,7 @@ https://bot.example.com/mai-plugin/lxns/callback
 
 水鱼成绩更新需要部署者另行提供受控 HTTP 代理。本插件只生成客户端配置和处理回调，不实现通用 HTTP CONNECT 转发代理。不得暴露无认证的开放代理，并应限制目标域名、端口和访问来源。
 
-OAuth Token、水鱼导入 Token、开发者 Token、QQ 号和 friend code 都属于敏感信息。请勿在聊天记录、工单或截图中公开；`oauth.tokenCipherKey` 更换前应先迁移或清理已有 OAuth Token。
+OAuth 凭据和令牌属于敏感信息。请勿在聊天记录、工单或截图中公开；`oauth.tokenCipherKey` 更换前应先迁移或清理已有落雪 OAuth Token。
 
 ## 项目结构
 

@@ -47,6 +47,30 @@ export class ProviderOAuthRequiredError extends ProviderError {
   }
 }
 
+export class ProviderScopeError extends ProviderError {
+  constructor(provider: ProviderId) {
+    super(provider, 'The application lacks the required scope.', 403)
+  }
+}
+
+export class ProviderRateLimitError extends ProviderError {
+  constructor(provider: ProviderId) {
+    super(provider, 'The provider rate limit was reached.', 429)
+  }
+}
+
+export class ProviderAmbiguousTargetError extends ProviderError {
+  constructor(provider: ProviderId) {
+    super(provider, 'Multiple authorized accounts match this QQ number.')
+  }
+}
+
+export class ProviderConfigurationError extends ProviderError {
+  constructor(provider: ProviderId) {
+    super(provider, 'Provider OAuth client configuration is invalid.')
+  }
+}
+
 export class ProviderMalformedPayloadError extends ProviderError {
   constructor(provider: ProviderId, message = 'The provider returned a malformed payload.') {
     super(provider, message)

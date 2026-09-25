@@ -1,10 +1,14 @@
 import {
   findCancellationError,
   ProviderBindingRequiredError,
+  ProviderAmbiguousTargetError,
+  ProviderConfigurationError,
   ProviderNoDataError,
   ProviderNotFoundError,
   ProviderOAuthRequiredError,
   ProviderPrivacyError,
+  ProviderRateLimitError,
+  ProviderScopeError,
   ProviderUnsupportedError,
 } from '../providers/errors'
 import {
@@ -25,6 +29,10 @@ export type QueryErrorCode =
   | 'unsupported'
   | 'oauth-required'
   | 'unknown'
+  | 'provider-config'
+  | 'provider-scope'
+  | 'provider-limit'
+  | 'target-ambiguous'
 
 export interface TextFallbackElement {
   type: 'text'
@@ -75,6 +83,10 @@ const messages: Record<QueryErrorCode, string> = {
   unsupported: '当前查分器不支持该功能。',
   'oauth-required': '该功能需要您在查分器授权BOT访问您的成绩信息。',
   unknown: '查询失败，请重试，或发送“/mai”返回帮助。',
+  'provider-config': '水鱼 OAuth 客户端配置无效，请联系部署者检查客户端 ID 和密钥。',
+  'provider-scope': '水鱼应用缺少成绩读取权限，请联系部署者确认 prober.records.read 已获批。',
+  'provider-limit': '水鱼请求已达限额，请稍后重试。',
+  'target-ambiguous': '该 QQ 号关联了多个已授权水鱼账号，无法确定查询目标。',
 }
 
 function errorMessage(code: QueryErrorCode, text = messages[code]): QueryErrorMessage {
@@ -89,6 +101,10 @@ export function mapQueryError(
   if (cancellation) throw cancellation
   if (error instanceof QqBindingRequiredError) return errorMessage('qq-unbound')
   if (error instanceof QueryTargetBindingRequiredError) return errorMessage('target-qq-unbound')
+  if (error instanceof ProviderConfigurationError) return errorMessage('provider-config')
+  if (error instanceof ProviderScopeError) return errorMessage('provider-scope')
+  if (error instanceof ProviderRateLimitError) return errorMessage('provider-limit')
+  if (error instanceof ProviderAmbiguousTargetError) return errorMessage('target-ambiguous')
   if (error instanceof ProviderBindingRequiredError) return errorMessage('provider-unbound')
   if (error instanceof ProviderNotFoundError) return errorMessage('player-not-found')
   if (error instanceof ProviderPrivacyError) {
@@ -100,7 +116,8 @@ export function mapQueryError(
   if (error instanceof ProviderUnsupportedError) {
     return errorMessage('unsupported', error.message || messages.unsupported)
   }
-  if (error instanceof ProviderOAuthRequiredError) return errorMessage('oauth-required')
+  if (error instanceof ProviderOAuthRequiredError) return errorMessage('oauth-required',
+    context.isSelf === false ? '目标玩家尚未授权本应用读取水鱼成绩，请由目标玩家发送“/mai 绑定水鱼”。' : undefined)
   return errorMessage('unknown')
 }
 

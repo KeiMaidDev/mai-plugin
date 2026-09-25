@@ -6,7 +6,9 @@ import { PlayerInfo, PlayerSettings, RatingResponse, RecordsResponse } from '../
 import { Rating } from '../domain/rating'
 import {
   ProviderAuthorizationError,
+  ProviderAmbiguousTargetError,
   ProviderBindingRequiredError,
+  ProviderConfigurationError,
   ProviderError,
   findCancellationError,
   ProviderMalformedPayloadError,
@@ -14,6 +16,8 @@ import {
   ProviderNotFoundError,
   ProviderOAuthRequiredError,
   ProviderPrivacyError,
+  ProviderRateLimitError,
+  ProviderScopeError,
   ProviderTimeoutError,
   ProviderTransportError,
   ProviderUnsupportedError,
@@ -36,6 +40,10 @@ export interface ProviderChainOptions {
 }
 
 const exceptionPriority = [
+  ProviderConfigurationError,
+  ProviderAmbiguousTargetError,
+  ProviderScopeError,
+  ProviderRateLimitError,
   ProviderPrivacyError,
   ProviderBindingRequiredError,
   ProviderAuthorizationError,
