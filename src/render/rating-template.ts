@@ -201,7 +201,7 @@ export async function createRatingRenderPlan(input: RatingRenderInput, service: 
     id: 'rating-footer',
     style: { position: 'absolute', left: 0, top: FOOTER_Y, width: 1280, height: 45, backgroundColor: '#013162' },
     children: [createTextNode({
-      text: '可怜Bot 9.0 by 心水湛清 617 | https://bot-docs.otmdb.cn',
+      text: '样式参考可怜Bot | https://bot-docs.otmdb.cn',
       style: {
         position: 'absolute', left: 0, top: 10, width: 1280, height: 30,
         textAlign: 'center', whiteSpace: 'nowrap', fontFamily: MAIMAI_RENDER_THEME.fontFamily,
