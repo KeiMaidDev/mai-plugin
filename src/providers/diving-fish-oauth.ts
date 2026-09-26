@@ -5,6 +5,7 @@ import { ProviderHttpClient, type ProviderContext, type ProviderLogger } from '.
 import { ProviderMalformedPayloadError, ProviderTransportError } from './errors'
 
 const AUTH = 'https://auth.diving-fish.com'
+const READ_SCOPE = 'prober.records.read'
 const SCOPES = 'prober.records.read prober.records.write'
 
 type Scope = 'prober.records.read' | 'prober.records.write' | typeof SCOPES
@@ -97,12 +98,18 @@ export class DivingFishOAuth {
 
   async begin(session: BindSession) {
     if (this.disposed) throw new DivingFishOAuthError('disposed')
-    const data = await this.post('/oauth/device_authorization', {
-      ...this.credentials(),
-      scope: SCOPES,
+    const authorize = (scope: Scope) => this.post('/oauth/device_authorization', {
+      ...this.credentials(), scope,
       subject_ref: this.subjectRef(session.userId),
       binding_label: this.bindingLabel(session.userId),
     })
+    let data: unknown
+    try {
+      data = await authorize(SCOPES)
+    } catch (error) {
+      if (!(error instanceof DivingFishOAuthError) || error.code !== 'invalid_scope') throw error
+      data = await authorize(READ_SCOPE)
+    }
     if (!object(data) || typeof data.device_code !== 'string' || typeof data.user_code !== 'string'
       || typeof data.verification_uri_complete !== 'string'
       || !Number.isFinite(data.expires_in) || !Number.isFinite(data.interval)) {
@@ -201,7 +208,7 @@ export class DivingFishOAuth {
     const accountId = await this.bind.getDivingFishAccount(userId)
     if (!accountId) return false
     try {
-      await this.accessToken(`sub:${accountId}`, SCOPES)
+      await this.accessToken(`sub:${accountId}`, READ_SCOPE)
       return true
     } catch (error) {
       if (error instanceof DivingFishOAuthError && error.code === 'scope_not_granted') return false

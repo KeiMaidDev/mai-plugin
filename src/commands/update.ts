@@ -198,7 +198,7 @@ export function registerUpdateCommands(
           const { url, code } = await dependencies.updateService.beginDivingFishOAuth(
             createUpdateSessionLocator(session, dependencies, ''),
           )
-          const text = `请打开水鱼授权页面并输入用户码 ${code}。无法使用按钮时请复制链接：\n${url}`
+          const text = `请点击下方按钮授权BOT访问您在水鱼查分器的成绩。`
           await replyText(session, dependencies, text, createQqUrlGuidance(text, {
             id: 'diving-fish-oauth', label: '前往水鱼授权',
             visitedLabel: '重新前往水鱼授权', url,
