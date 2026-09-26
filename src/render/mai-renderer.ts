@@ -1,4 +1,5 @@
 import type { MaimaiDataStore } from '../data/sync-service'
+import { DEFAULT_RATING_FOOTER_TEXT } from '../constants'
 import {
   createCourseRenderPlan,
   type CourseRenderInput,
@@ -33,10 +34,11 @@ export class TakumiMaiRenderer implements MaiRenderer {
   constructor(
     readonly renderService: TakumiRenderService,
     readonly data: MaimaiDataStore,
+    readonly ratingFooterText = DEFAULT_RATING_FOOTER_TEXT,
   ) {}
 
   async renderRating(input: RatingRenderInput, signal?: AbortSignal): Promise<Buffer> {
-    const plan = await createRatingRenderPlan(input, this.renderService, this.data)
+    const plan = await createRatingRenderPlan(input, this.renderService, this.data, this.ratingFooterText)
     return this.renderService.render(plan.node, {
       width: plan.width,
       height: plan.height,

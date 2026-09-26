@@ -1,5 +1,6 @@
 import type { Node } from '@takumi-rs/helpers'
 import type { MaimaiDataStore } from '../data/sync-service'
+import { DEFAULT_RATING_FOOTER_TEXT } from '../constants'
 import type { RecordEntry } from '../domain/music'
 import type { PlayerInfo, PlayerSettings } from '../domain/player'
 import { DeluxeScore, Rating } from '../domain/rating'
@@ -46,6 +47,16 @@ const CARD_STEP_Y = 94
 const CARD_COLUMNS = 5
 const DIVIDER_HEIGHT = 73
 const FOOTER_Y = 1235
+const FOOTER_TEXT_WIDTH = 1200
+
+function footerFontSize(text: string) {
+  // Estimate glyph advances; overflow clipping handles font-specific differences.
+  let widthUnits = 0
+  for (const char of text) {
+    widthUnits += char === ' ' ? 0.35 : char.codePointAt(0)! > 0x024f ? 1 : 0.6
+  }
+  return Math.max(14, Math.min(22, Math.floor(FOOTER_TEXT_WIDTH / Math.max(1, widthUnits))))
+}
 
 function countOf(value: number | undefined, fallback: number, name: string) {
   const count = value ?? fallback
@@ -175,7 +186,7 @@ async function cards(records: readonly RecordEntry[], section: 'old' | 'new', co
 }
 
 export async function createRatingRenderPlan(input: RatingRenderInput, service: TakumiRenderService,
-  data: MaimaiDataStore): Promise<RatingRenderPlan> {
+  data: MaimaiDataStore, footerText = DEFAULT_RATING_FOOTER_TEXT): Promise<RatingRenderPlan> {
   const oldCount = countOf(input.oldCount, 35, 'Old rating slot count')
   const newCount = countOf(input.newCount, 15, 'New rating slot count')
   if (oldCount + newCount > 50) throw new RangeError('Rating image supports at most 50 slots')
@@ -183,6 +194,7 @@ export async function createRatingRenderPlan(input: RatingRenderInput, service: 
   const newRating = input.newRecords.slice(0, newCount).reduce((sum, record) => sum + record.rating, 0)
   const rating = input.rating ?? oldRating + newRating
   const title = input.title ?? `[${input.backend}] B${oldCount} ${oldRating} + B${newCount} ${newRating} = ${rating}`
+  const caption = footerText.trim().replace(/\s+/gu, ' ')
   const oldRows = Math.ceil(oldCount / CARD_COLUMNS)
   const dividerY = CARD_Y + oldRows * CARD_STEP_Y
   const dividerHeight = newCount ? input.newGroupDisabled ? 30 : DIVIDER_HEIGHT : 0
@@ -200,15 +212,16 @@ export async function createRatingRenderPlan(input: RatingRenderInput, service: 
   children.push(...newCards, createContainerNode({
     id: 'rating-footer',
     style: { position: 'absolute', left: 0, top: FOOTER_Y, width: 1280, height: 45, backgroundColor: '#013162' },
-    children: [createTextNode({
-      text: '样式参考可怜Bot | https://bot-docs.otmdb.cn',
+    children: caption ? [createTextNode({
+      text: caption,
       style: {
-        position: 'absolute', left: 0, top: 10, width: 1280, height: 30,
-        textAlign: 'center', whiteSpace: 'nowrap', fontFamily: MAIMAI_RENDER_THEME.fontFamily,
-        fontWeight: 900, fontSize: 22, lineHeight: 1.1, color: '#ffffff',
+        position: 'absolute', left: 40, top: 10, width: FOOTER_TEXT_WIDTH, height: 30,
+        textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+        fontFamily: MAIMAI_RENDER_THEME.fontFamily,
+        fontWeight: 900, fontSize: footerFontSize(caption), lineHeight: 1.1, color: '#ffffff',
         textShadow: '1px 1px 0 #000000',
       },
-    })],
+    })] : [],
   }))
   return {
     width: RATING_TEMPLATE_SIZE.width,

@@ -1,4 +1,5 @@
 import Schema from 'schemastery'
+import { DEFAULT_RATING_FOOTER_TEXT } from './constants'
 import {
   DEFAULT_LXNS_CALLBACK_PATH,
   LXNS_CALLBACK_PATH_PATTERN,
@@ -33,6 +34,7 @@ export interface Config {
     queueLimit: number
     timeoutMs: number
   }
+  ratingFooterText: string
   publicBaseUrl: string
   administrators: string[]
   compatibilityMode: boolean
@@ -85,6 +87,8 @@ export const ConfigSchema: Schema<Config> = Schema.object({
     timeoutMs: Schema.natural().min(1_000).max(120_000).default(30_000)
       .description('单个图片渲染任务的超时时间，单位为毫秒'),
   }).description('图片渲染'),
+  ratingFooterText: Schema.string().default(DEFAULT_RATING_FOOTER_TEXT)
+    .description('图片渲染共用的底部文字；留空仅显示底栏。'),
   publicBaseUrl: Schema.string().default('')
     .description('插件回调路由可从公网访问的基础 URL；留空时使用 Koishi Server 的 selfUrl'),
   administrators: Schema.array(Schema.string()).default([])

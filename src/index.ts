@@ -294,7 +294,7 @@ export async function createDefaultCommandDependencies(
     updateService,
     guessService,
     settingRepository: repositories.setting,
-    renderer: new TakumiMaiRenderer(services.renderer, data),
+    renderer: new TakumiMaiRenderer(services.renderer, data, runtime.config.ratingFooterText),
     assetTransformer: typeof transform === 'function'
       ? { transform: content => transform.call(assets, content) }
       : undefined,

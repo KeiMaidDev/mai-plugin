@@ -15,3 +15,6 @@ A paginated rating image of records selected by a query, without the Best N old/
 
 **Song 50**:
 A rating image that repeats one chart record 50 times to show its corresponding total rating.
+
+**Rating footer text**:
+The caption in the bottom band shared by Best N, Score lists, and Song 50 images.

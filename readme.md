@@ -29,6 +29,8 @@ mai-plugin
 
 安装后启用插件，如需在 QQ 官机使用，请确认 Koishi 已启用 assets 服务。
 
+在插件配置页修改 `ratingFooterText`，可统一替换 B15/B25/B35/B40/B50、成绩列表和歌50图片的底部文字；清空后只保留底栏。
+
 ## 运行要求
 
 - Node.js 18 或更高版本。
