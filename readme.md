@@ -126,6 +126,26 @@ https://bot.example.com/mai-plugin/lxns/callback
 
 OAuth 凭据和令牌属于敏感信息。请勿在聊天记录、工单或截图中公开；`oauth.tokenCipherKey` 更换前应先迁移或清理已有落雪 OAuth Token。
 
+## 服务器状态
+
+`/mai 状态`、`/mai 有网吗`，或直接发送「有网吗」，会读取[舞萌社区状态页](https://status.awmc.cc/status/maimai)，先归纳出一条结论，再给出 CMCC / CT / CU 三条线路与其他展示分组的明细。
+
+结论只看三条线路组，社区服务组只展示不参与判定：
+
+- **移动线路正常** —— 每个线路组都至少有一个监控项，且每项最新的心跳都是「正常」。
+- **部分线路异常** —— 至少一个线路组正常，同时至少一个不正常。
+- **移动线路全部离线** —— 没有任何线路组正常。
+
+公告与计划维护不会改变结论，但会出现在播报里。状态页自带的 `Overall / 总览` 分组会被跳过，因为它只是下面各组的汇总，还包含一个 `[测试]` 探针。
+
+QQ 群聊与私聊收到原生 Markdown 播报：`##` 结论标题、横幅图、每组一张四列表（服务器 / 状态 / 延迟 / 24h）、公告与计划维护引用行，以及最新心跳的时间。24h 列只在异常行写一位小数百分比，正常行写 `-`，让正常的播报保持窄。其他平台与兼容模式收到同样的内容，只是横幅图作为普通图片元素、正文作为纯文本，异常行把 24h 写成 `，24h <n>%`。
+
+播报里的心跳永远按时间取最新的一条，而不是按数组位置，因此不会出现「状态是几小时前的，时间戳却是当前」的错位。状态页返回的数据缺少线路组、格式不符或请求失败时，会回复一句中性说明，并保持与其他功能一致的回退文案。
+
+状态页每 20 秒上报一次，因此响应默认缓存 30 秒；`status.cacheTtlMs` 设为 `0` 可关闭缓存。`status.enabled` 关闭后不注册任何相关指令。
+
+横幅图放在 `assets/generated/`：`status-normal.png`（正常）与 `status-offline.png`（离线）来自原插件，`status-degraded.png`（异常）为本插件按同一风格新增。图片经 Koishi assets 服务上传，并以 `#96px #96px` 声明展示尺寸，让两张原生尺寸不同的原图渲染成同一大小；上传失败时改用无 Markdown 语法的纯文本播报，横幅图仍作为普通图片元素发送，整条回复不会失败。
+
 ## 项目结构
 
 ```text
@@ -168,3 +188,29 @@ yarn clone https://github.com/KeiMaidDev/koishi-plugin-mai-plugin
 ## 许可证
 
 MIT
+
+服务器状态功能移植自 [koishi-plugin-maimai-status](https://github.com/ShiraiKuroko003/koishi-plugin-maimai-status)，原作者 ShiraiKuroko003，以 MIT 许可发布。`assets/generated/status-normal.png` 与 `assets/generated/status-offline.png` 直接取自该项目，`status-degraded.png` 由 `status-normal.png` 改色而来。以下是原项目的许可声明：
+
+```text
+MIT License
+
+Copyright (c) 2026 ShiraiKuroko003
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```

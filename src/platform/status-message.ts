@@ -7,20 +7,45 @@ import {
   type StatusMonitorView,
   type StatusSnapshot,
 } from '../services/status-service'
+import { createQqMarkdownImageContent } from './qq-markdown-image'
 
 export const STATUS_BULLETIN_TITLE = '舞萌 DX 服务器状态'
 
 /** Every field the status page leaves empty reads as this. */
 const UNKNOWN_VALUE = '未知'
 
-const verdictLabels: Record<StatusHealth, string> = {
-  normal: '移动线路正常',
-  degraded: '部分线路异常',
-  offline: '移动线路全部离线',
+const verdictStyles: Record<StatusHealth, { icon: string, label: string }> = {
+  normal: { icon: '✅', label: '移动线路正常' },
+  degraded: { icon: '⚠️', label: '部分线路异常' },
+  offline: { icon: '❌', label: '移动线路全部离线' },
+}
+
+/**
+ * The status artwork that accompanies the verdict, relative to the packaged
+ * `assets/` directory. The source plugin shipped only the normal and offline
+ * files; the degraded one is this plugin's own, drawn from the normal artwork
+ * so the three keep one style.
+ */
+const bannerAssets: Record<StatusHealth, string> = {
+  normal: 'generated/status-normal.png',
+  degraded: 'generated/status-degraded.png',
+  offline: 'generated/status-offline.png',
+}
+
+/** Declared banner size, so the two source files render at one size despite their own. */
+export const STATUS_BANNER_SIZE = 96
+export const STATUS_BANNER_ALT = 'maimai-status'
+
+/** Reads the artwork a verdict selects, resolved from the package's own assets. */
+export type StatusBannerLoader = (health: StatusHealth) => Promise<Buffer>
+
+/** Path of a verdict's artwork, relative to the package's `assets/` directory. */
+export function statusBannerAsset(health: StatusHealth) {
+  return bannerAssets[health]
 }
 
 export function statusVerdictLabel(health: StatusHealth) {
-  return verdictLabels[health]
+  return verdictStyles[health].label
 }
 
 const shanghaiFormatter = new Intl.DateTimeFormat('zh-CN', {
@@ -78,8 +103,9 @@ function latencyField(ping: number | null) {
   return ping === null ? UNKNOWN_VALUE : `${ping}ms`
 }
 
-function uptimeField(uptime: number) {
-  return `24h ${(uptime * 100).toFixed(1)}%`
+/** 24-hour availability, one decimal place, as both bulletins print it. */
+function uptimePercent(uptime: number) {
+  return `${(uptime * 100).toFixed(1)}%`
 }
 
 /**
@@ -90,7 +116,7 @@ function formatMonitorLine(monitor: StatusMonitorView) {
   const state = monitorState(monitor.status)
   const fields = [state.label, latencyField(monitor.ping)]
   if (monitor.status !== HEALTHY_MONITOR_STATUS && monitor.uptime !== null) {
-    fields.push(uptimeField(monitor.uptime))
+    fields.push(`24h ${uptimePercent(monitor.uptime)}`)
   }
   return `- ${state.icon} ${monitor.name}（${fields.join('，')}）`
 }
@@ -103,15 +129,12 @@ function formatStatusGroup(group: StatusGroupView) {
 const INCIDENT_LABEL = '公告与故障'
 const MAINTENANCE_LABEL = '计划维护'
 
-/**
- * One line per list, so several titles share a line. Both lists empty yields an
- * empty block, which the bulletin drops together with its blank line.
- */
-function statusNoticeBlock(snapshot: Pick<StatusSnapshot, 'incidents' | 'maintenance'>) {
+/** One line per list, so several titles share a line. Both lists empty yields nothing. */
+function noticeLines(snapshot: Pick<StatusSnapshot, 'incidents' | 'maintenance'>) {
   const lines: string[] = []
   if (snapshot.incidents.length > 0) lines.push(`${INCIDENT_LABEL}：${snapshot.incidents.join('；')}`)
   if (snapshot.maintenance.length > 0) lines.push(`${MAINTENANCE_LABEL}：${snapshot.maintenance.join('；')}`)
-  return lines.join('\n')
+  return lines
 }
 
 /**
@@ -122,7 +145,65 @@ export function formatStatusText(snapshot: StatusSnapshot) {
   return [
     statusVerdictLine(snapshot),
     ...snapshot.groups.map(formatStatusGroup),
-    statusNoticeBlock(snapshot),
+    noticeLines(snapshot).join('\n'),
+    statusTimeLine(snapshot),
+  ].filter(block => block.length > 0).join('\n\n')
+}
+
+const TABLE_HEADER = ['服务器', '状态', '延迟', '24h'] as const
+const EMPTY_CELL = '-'
+
+/** A table cell cannot carry a line break or a pipe without breaking the row. */
+function tableCell(value: string) {
+  return value.replaceAll('|', '\\|').replaceAll(/\s+/gu, ' ').trim()
+}
+
+function tableRow(cells: readonly string[]) {
+  return `| ${cells.map(tableCell).join(' | ')} |`
+}
+
+/**
+ * A healthy row leaves the 24h cell blank, so a healthy bulletin stays narrow;
+ * an abnormal row carries the availability the status page reports for it.
+ */
+function markdownUptimeCell(monitor: StatusMonitorView) {
+  return monitor.status === HEALTHY_MONITOR_STATUS || monitor.uptime === null
+    ? EMPTY_CELL
+    : `${(monitor.uptime * 100).toFixed(1)}%`
+}
+
+function markdownMonitorRow(monitor: StatusMonitorView) {
+  const state = monitorState(monitor.status)
+  return tableRow([
+    monitor.name,
+    `${state.icon} ${state.label}`,
+    monitor.ping === null ? EMPTY_CELL : `${monitor.ping}ms`,
+    markdownUptimeCell(monitor),
+  ])
+}
+
+function markdownGroupSection(group: StatusGroupView) {
+  return [
+    `### ${group.name}`,
+    '',
+    tableRow(TABLE_HEADER),
+    tableRow(TABLE_HEADER.map(() => '---')),
+    ...group.monitors.map(markdownMonitorRow),
+  ].join('\n')
+}
+
+/**
+ * The Markdown bulletin: the verdict as a heading, the banner, one table per
+ * group, the notices when there are any, then the freshness of the answer. The
+ * banner URL is resolved by the caller, which owns the upload.
+ */
+export function formatStatusMarkdown(snapshot: StatusSnapshot, bannerUrl: string) {
+  const verdict = verdictStyles[snapshot.health]
+  return [
+    `## ${verdict.icon} ${verdict.label}`,
+    createQqMarkdownImageContent(bannerUrl, STATUS_BANNER_SIZE, STATUS_BANNER_SIZE, STATUS_BANNER_ALT),
+    ...snapshot.groups.map(markdownGroupSection),
+    noticeLines(snapshot).map(line => `> ${line}`).join('\n'),
     statusTimeLine(snapshot),
   ].filter(block => block.length > 0).join('\n\n')
 }

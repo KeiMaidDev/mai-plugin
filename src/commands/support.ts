@@ -25,6 +25,7 @@ import type { QueryService } from '../services/query-service'
 import type { QueueService } from '../services/queue-service'
 import type { SettingService } from '../services/setting-service'
 import type { StatusService } from '../services/status-service'
+import type { StatusBannerLoader } from '../platform/status-message'
 import type { GuessService } from '../services/guess-service'
 import type { UpdateService } from '../services/update-service'
 import { PublicCallbackUnavailableError } from '../services/update-service'
@@ -96,6 +97,8 @@ export interface CoreCommandDependencies {
   statusService?: Pick<StatusService, 'snapshot'>
   /** Whether the deployment enables the server-status bulletin. */
   statusEnabled?: boolean
+  /** Reads the server-status banner artwork for a verdict. */
+  loadStatusBanner?: StatusBannerLoader
   /** Renders the fallback PNG of a guess card where QQ Markdown is unavailable. */
   guessCardRender?: (input: GuessCardFallbackInput) => Promise<Buffer>
   assetTransformer?: AssetTransformer

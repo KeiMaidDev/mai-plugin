@@ -18,6 +18,8 @@ import { LxnsProvider } from './providers/lxns'
 import { ProviderChain } from './providers/provider-chain'
 import { StatusPageProvider } from './providers/status-page'
 import { createGuessPresenter } from './platform/guess-message'
+import { statusBannerAsset } from './platform/status-message'
+import { resolvePackageAssetPath } from './render/assets'
 import { TakumiMaiRenderer } from './render/mai-renderer'
 import { TakumiGuessRenderer } from './render/guess-template'
 import {
@@ -304,6 +306,7 @@ export async function createDefaultCommandDependencies(
     updateService,
     statusService,
     statusEnabled: runtime.config.status.enabled,
+    loadStatusBanner: health => readFile(resolvePackageAssetPath(statusBannerAsset(health))),
     guessService,
     settingRepository: repositories.setting,
     renderer: new TakumiMaiRenderer(services.renderer, data, runtime.config.ratingFooterText),

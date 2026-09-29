@@ -59,4 +59,7 @@ A group of monitored services that share one carrier route to the game servers. 
 The single conclusion a Status bulletin states about whether the game servers are reachable: normal, partially degraded, or fully offline.
 
 **Status bulletin**:
-The reply that reports Server status: its Health verdict, one line table per group, any active announcement or planned maintenance, and the time of the newest reported heartbeat.
+The reply that reports Server status: its Health verdict, the Banner, one table per group, any active announcement or planned maintenance, and the time of the newest reported heartbeat. It has two forms of the same content — native Markdown on a rich-text platform, and plain text with the Banner as an ordinary image element everywhere else.
+
+**Banner**:
+The status artwork a Status bulletin carries for its Health verdict: the green artwork when every Line group is healthy, the amber one when only some are, and the gray one when none is.

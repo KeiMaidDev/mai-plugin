@@ -232,6 +232,8 @@ export function registerCoreCommands(
     ...registerStatusCommands(ctx, {
       statusService: commandDependencies.statusService,
       enabled: commandDependencies.statusEnabled,
+      assetTransformer: commandDependencies.assetTransformer,
+      loadStatusBanner: commandDependencies.loadStatusBanner,
       settingService: commandDependencies.settingService,
       compatibilityMode: commandDependencies.compatibilityMode,
     }),

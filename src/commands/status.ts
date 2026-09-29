@@ -1,12 +1,30 @@
 import type { Command, Context } from 'koishi'
-import { PLUGIN_NAME } from '../constants'
-import { formatStatusText, mapStatusError } from '../platform/status-message'
+import h from '@satorijs/element'
+import { PLUGIN_NAME, isRichTextPlatform } from '../constants'
+import type { FallbackElement } from '../platform/fallback-message'
+import { createQqNativeMarkdown, sendReply } from '../platform/qq-message'
+import {
+  transformAssetImageUrl,
+  type AssetTransformer,
+} from '../platform/qq-markdown-image'
+import {
+  formatStatusMarkdown,
+  formatStatusText,
+  mapStatusError,
+  type StatusBannerLoader,
+} from '../platform/status-message'
 import { findCancellationError } from '../providers/errors'
 import { StatusPageError } from '../providers/status-page'
-import { StatusPageEmptyError, type StatusService } from '../services/status-service'
+import {
+  StatusPageEmptyError,
+  type StatusService,
+  type StatusSnapshot,
+} from '../services/status-service'
 import {
   commandAction,
+  compatibilityModeFor,
   replyText,
+  type ActiveCommandSession,
   type ReplyCommandDependencies,
 } from './support'
 
@@ -14,6 +32,47 @@ export interface StatusCommandDependencies extends ReplyCommandDependencies {
   statusService?: Pick<StatusService, 'snapshot'>
   /** A deployment that disables the bulletin registers no command at all. */
   enabled?: boolean
+  assetTransformer?: AssetTransformer
+  /** Reads a verdict's banner artwork; absent means the bulletin omits the image. */
+  loadStatusBanner?: StatusBannerLoader
+}
+
+/**
+ * The status bulletin at the send boundary. QQ picks the Markdown form of the
+ * same snapshot; every other platform, and compatibility mode, gets the banner
+ * as an ordinary image element followed by the plain text. A banner that cannot
+ * be read or uploaded costs the reply the banner, never the reply itself.
+ */
+export async function replyStatusBulletin(
+  session: ActiveCommandSession,
+  dependencies: StatusCommandDependencies,
+  snapshot: StatusSnapshot,
+) {
+  const text = formatStatusText(snapshot)
+  let banner: Buffer | null = null
+  try {
+    banner = dependencies.loadStatusBanner ? await dependencies.loadStatusBanner(snapshot.health) : null
+  } catch {
+    banner = null
+  }
+  const fallback: FallbackElement[] = [
+    ...(banner ? [{ type: 'image' as const, data: banner, mimeType: 'image/png' }] : []),
+    { type: 'text' as const, text },
+  ]
+  const compatibilityMode = await compatibilityModeFor(session, dependencies)
+  let rich: h | undefined
+  // `sendReply` applies the same platform rule; repeating it here is what keeps
+  // an upload that would be discarded from being made at all.
+  if (banner && dependencies.assetTransformer
+    && isRichTextPlatform(session.platform) && !compatibilityMode) {
+    try {
+      const url = await transformAssetImageUrl(banner, 'image/png', dependencies.assetTransformer)
+      rich = createQqNativeMarkdown(formatStatusMarkdown(snapshot, url))
+    } catch {
+      rich = undefined
+    }
+  }
+  await sendReply(session, fallback, rich, { compatibilityMode })
 }
 
 export function registerStatusCommands(
@@ -29,7 +88,7 @@ export function registerStatusCommands(
       .action(commandAction(async ({ session }) => {
         try {
           const snapshot = await statusService.snapshot()
-          await replyText(session, dependencies, formatStatusText(snapshot))
+          await replyStatusBulletin(session, dependencies, snapshot)
         } catch (error) {
           const cancellation = findCancellationError(error)
           if (cancellation) throw cancellation
