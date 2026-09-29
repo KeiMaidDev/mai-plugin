@@ -119,6 +119,30 @@ export function createQqCommandAction(
   }
 }
 
+/** Payload QQ clients accept for a button that only focuses the input box. */
+const qqInputHintData = ' '
+
+/**
+ * A button that fills the client's input box instead of sending anything, used
+ * by the reference guess keyboards for their `输入答案` action. Command buttons
+ * reject a blank payload, so this shape needs its own factory.
+ */
+export function createQqInputHintAction(
+  options: QqButtonActionOptions = {},
+): QqCommandButtonAction {
+  return {
+    type: 2,
+    permission: { type: 2 },
+    data: qqInputHintData,
+    unsupport_tips: resolveUnsupportTips(
+      options.unsupportTips,
+      '请手动输入答案后发送。',
+    ),
+    reply: false,
+    enter: false,
+  }
+}
+
 export function createQqCallbackAction(
   data: string,
   options: QqButtonActionOptions = {},

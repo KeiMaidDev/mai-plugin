@@ -193,7 +193,7 @@ export async function createRatingRenderPlan(input: RatingRenderInput, service: 
   const oldRating = input.oldRecords.slice(0, oldCount).reduce((sum, record) => sum + record.rating, 0)
   const newRating = input.newRecords.slice(0, newCount).reduce((sum, record) => sum + record.rating, 0)
   const rating = input.rating ?? oldRating + newRating
-  const title = input.title ?? `[${input.backend}] B${oldCount} ${oldRating} + B${newCount} ${newRating} = ${rating}`
+  const title = input.title ?? `[${input.backend}] ${oldRating} + ${newRating} = ${rating}`
   const caption = footerText.trim().replace(/\s+/gu, ' ')
   const oldRows = Math.ceil(oldCount / CARD_COLUMNS)
   const dividerY = CARD_Y + oldRows * CARD_STEP_Y

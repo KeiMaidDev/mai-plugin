@@ -18,3 +18,33 @@ A rating image that repeats one chart record 50 times to show its corresponding 
 
 **Rating footer text**:
 The caption in the bottom band shared by Best N, Score lists, and Song 50 images.
+
+**Rating image title**:
+The short label in a Rating image's header that states how the displayed rating is composed. It names the backend and any contribution beyond the selected records.
+
+**Provider label**:
+The Chinese display name of a score backend, used wherever a query result names the backend.
+
+**Query result message**:
+The reply that presents a Rating image together with its result title and generation time line.
+
+**Result title**:
+The shared heading shown above the image in a query result message.
+
+**Generation time line**:
+The line shown below an image in a query result message that reports how long the image render took.
+
+**Classical guess**:
+The guessing game in which hints progressively describe one song and players answer with its name.
+
+**Opening game**:
+The guessing game in which players open characters to reveal the names of eight songs.
+
+**Guess board**:
+An opening game's list of songs, each shown as open, still masked, or missed, with the characters opened so far.
+
+**Guess card**:
+The message presenting one guess image — a cover hint or a revealed song — under the `舞萌猜歌` heading, followed by its caption lines.
+
+**Guess keyboard**:
+The buttons attached to a guess message, which either fill the client's input box or run a guessing command.

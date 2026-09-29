@@ -45,10 +45,12 @@ const queueActionRows: readonly (readonly QqCommandGuidanceButton[])[] = [
   [
     queueAction('queue-add-arcade', '添加机厅', '添加机厅'),
     queueAction('queue-delete-arcade', '删除机厅', '删除机厅'),
-    queueAction('queue-view-aliases', '查看别名', '查看别名'),
   ],
   [
+    queueAction('queue-view-aliases', '查看别名', '查看别名'),
     queueAction('queue-add-alias', '添加别名', '添加别名'),
+  ],
+  [
     queueAction('queue-delete-alias', '删除别名', '删除别名'),
     queueAction('queue-bind-group', '添加分组', '添加分组'),
   ],

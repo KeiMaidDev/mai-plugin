@@ -1,4 +1,5 @@
 import type { Context } from 'koishi'
+import { providerLabel } from '../providers/labels'
 import type { ProviderMode } from '../providers/types'
 import {
   InvalidSettingError,
@@ -30,12 +31,6 @@ export interface QuerySettingsPanelState {
   divingFish: boolean
 }
 
-function providerLabel(provider: ProviderMode) {
-  if (provider === 'diving-fish') return '水鱼'
-  if (provider === 'lxns') return '落雪'
-  return '自动'
-}
-
 export function createQuerySettingsPanel(state: QuerySettingsPanelState) {
   const text = [
     `当前查分器：${providerLabel(state.provider)}`,
@@ -48,14 +43,14 @@ export function createQuerySettingsPanel(state: QuerySettingsPanelState) {
     [
       {
         id: 'query-settings-avatar',
-        label: '设置头像',
+        label: '👤设置头像',
         command: '/mai 设置头像',
         enter: false,
         reply: false,
       },
       {
         id: 'query-settings-plate',
-        label: '设置牌子',
+        label: '🪪设置牌子',
         command: '/mai 设置牌子',
         enter: false,
         reply: false,
@@ -63,23 +58,23 @@ export function createQuerySettingsPanel(state: QuerySettingsPanelState) {
     ],
     [
       {
-        id: 'query-settings-provider-auto',
-        label: '自动',
-        command: '/mai 设置查分器 自动',
+        id: 'query-settings-provider-lxns',
+        label: '❄️落雪',
+        command: '/mai 设置查分器 落雪',
         enter: true,
         reply: false,
       },
       {
         id: 'query-settings-provider-diving-fish',
-        label: '水鱼',
+        label: '🐟水鱼',
         command: '/mai 设置查分器 水鱼',
         enter: true,
         reply: false,
       },
       {
-        id: 'query-settings-provider-lxns',
-        label: '落雪',
-        command: '/mai 设置查分器 落雪',
+        id: 'query-settings-provider-auto',
+        label: '🔄自动',
+        command: '/mai 设置查分器 自动',
         enter: true,
         reply: false,
       },
@@ -87,14 +82,14 @@ export function createQuerySettingsPanel(state: QuerySettingsPanelState) {
     [
       {
         id: 'query-settings-lxns',
-        label: state.lxns ? '解绑落雪' : '绑定落雪',
+        label: state.lxns ? '⛓️解绑落雪' : '🔗绑定落雪',
         command: state.lxns ? '/mai 解绑落雪' : '/mai 绑定落雪',
         enter: true,
         reply: false,
       },
       {
         id: 'query-settings-diving-fish',
-        label: state.divingFish ? '解绑水鱼' : '绑定水鱼',
+        label: state.divingFish ? '⛓️解绑水鱼' : '🔗绑定水鱼',
         command: state.divingFish ? '/mai 解绑水鱼' : '/mai 绑定水鱼',
         enter: true,
         reply: false,

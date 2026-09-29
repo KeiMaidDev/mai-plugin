@@ -9,6 +9,8 @@ import { registerRecordCommands } from './record'
 import { registerSettingsCommands } from './settings'
 import { registerUpdateCommands } from './update'
 import type { CoreCommandDependencies } from './support'
+import { PLUGIN_NAME } from '../constants'
+import { createGuessPresenter } from '../platform/guess-message'
 import { parseComboQuery } from '../query/combo-parser'
 import { resolveQqCommandCallbackData } from '../platform/qq-message'
 
@@ -200,6 +202,11 @@ export function registerCoreCommands(
         guessService: dependencies.guessService,
         settingRepository: dependencies.settingRepository,
         settingService: dependencies.settingService,
+        presenter: createGuessPresenter({
+          assets: dependencies.assetTransformer,
+          renderCard: dependencies.guessCardRender,
+          logger: ctx.logger(PLUGIN_NAME),
+        }),
         administrators: dependencies.administrators,
         compatibilityMode: dependencies.compatibilityMode,
       })

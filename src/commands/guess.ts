@@ -1,4 +1,5 @@
 import type { Command, Context, Middleware, Session } from 'koishi'
+import type { GuessPresenter } from '../platform/guess-message'
 import type { SettingRepository } from '../database/repositories'
 import { isAdministrator } from '../platform/admin'
 import { GuessDeliveryError } from '../services/guess-service'
@@ -12,8 +13,7 @@ import type {
 } from '../services/guess-service'
 import {
   commandAction,
-  createQqCommandGuidance,
-  replyImage,
+  compatibilityModeFor,
   replyText,
   type ActiveCommandSession,
   type ReplyCommandDependencies,
@@ -29,6 +29,8 @@ type GuessServicePort = Pick<
 export interface GuessCommandDependencies extends ReplyCommandDependencies {
   guessService: GuessServicePort
   settingRepository: Pick<SettingRepository, 'get' | 'set'>
+  /** Presents every guess reply, in QQ Markdown where available. */
+  presenter: GuessPresenter
   administrators?: readonly string[]
 }
 
@@ -50,24 +52,9 @@ async function sendGuessReply(
   dependencies: GuessCommandDependencies,
   reply: GuessReply,
 ) {
-  const rich = createQqCommandGuidance(reply.text, [[{
-    id: 'guess-help',
-    label: '返回帮助',
-    command: '/mai',
-    enter: true,
-    reply: false,
-  }]])
-  if (reply.type === 'text') {
-    await replyText(session, dependencies, reply.text, rich)
-    return
-  }
-  await replyImage(
-    session,
-    dependencies,
-    reply.image,
-    reply.text,
-    rich,
-  )
+  await dependencies.presenter.send(session, reply, {
+    compatibilityMode: await compatibilityModeFor(session, dependencies),
+  })
 }
 
 function interactionFor(
@@ -209,7 +196,7 @@ export function registerGuessCommands(
         await startGame(session, dependencies, 'classical')
       })),
     ctx.command('mai.opening', '开始舞萌开字母')
-      .alias('mai.舞萌开字母', 'mai.出你字母')
+      .alias('mai.开字母', 'mai.出你字母')
       .action(commandAction(async ({ session }) => {
         await startGame(session, dependencies, 'opening')
       })),

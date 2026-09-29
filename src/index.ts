@@ -1,5 +1,4 @@
 import type { Context } from 'koishi'
-import h from '@satorijs/element'
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { Config, ConfigSchema } from './config'
@@ -17,6 +16,7 @@ import { DivingFishProvider } from './providers/diving-fish'
 import { DivingFishOAuth } from './providers/diving-fish-oauth'
 import { LxnsProvider } from './providers/lxns'
 import { ProviderChain } from './providers/provider-chain'
+import { createGuessPresenter } from './platform/guess-message'
 import { TakumiMaiRenderer } from './render/mai-renderer'
 import { TakumiGuessRenderer } from './render/guess-template'
 import {
@@ -85,6 +85,7 @@ export * from './commands/update'
 export * from './commands/support'
 export * from './platform/admin'
 export * from './platform/fallback-message'
+export * from './platform/guess-message'
 export * from './platform/qq-markdown-image'
 export * from './platform/qq-message'
 export * from './render/assets'
@@ -220,24 +221,37 @@ export async function createDefaultCommandDependencies(
   }
   const assets = ctxServices.assets
   const transform = assets?.transform
+  const assetTransformer = typeof transform === 'function'
+    ? { transform: (content: string) => transform.call(assets, content) }
+    : undefined
+  const guessRenderer = new TakumiGuessRenderer(services.renderer, data)
+  const guessPresenter = createGuessPresenter({
+    assets: assetTransformer,
+    renderCard: input => guessRenderer.renderCard(input),
+    logger,
+  })
   const guessService = new GuessService({
     musics: data.musics,
     repository: repositories.guess,
     aliasService,
-    renderer: new TakumiGuessRenderer(services.renderer, data),
+    renderer: guessRenderer,
     send: async (target: GuessTarget, reply: GuessReply) => {
       const bot = ctx.bots.find(candidate => candidate.platform === target.platform)
       if (!bot) {
         throw new Error(`[mai-plugin] no ${target.platform} bot is available to restore guessing game output.`)
       }
-      const content = reply.type === 'text'
-        ? h.text(reply.text)
-        : [h.image(reply.image, 'image/png'), h.text(reply.text)]
-      if (target.direct) {
-        await bot.sendPrivateMessage(target.userId, content)
-      } else {
-        await bot.sendMessage(target.channelId, content)
+      let compatibilityMode = false
+      try {
+        compatibilityMode = await settingService.isCompatibilityMode(target.userId)
+      } catch (error) {
+        logger.warn(`[mai-plugin] failed to read compatibility mode for a restored guess game: ${String(error)}`)
       }
+      await guessPresenter.send({
+        platform: target.platform,
+        send: content => (target.direct
+          ? bot.sendPrivateMessage(target.userId, content)
+          : bot.sendMessage(target.channelId, content)),
+      }, reply, { compatibilityMode })
     },
     now,
     random: Math.random,
@@ -274,9 +288,8 @@ export async function createDefaultCommandDependencies(
     guessService,
     settingRepository: repositories.setting,
     renderer: new TakumiMaiRenderer(services.renderer, data, runtime.config.ratingFooterText),
-    assetTransformer: typeof transform === 'function'
-      ? { transform: content => transform.call(assets, content) }
-      : undefined,
+    guessCardRender: input => guessRenderer.renderCard(input),
+    assetTransformer,
     administrators: runtime.config.administrators,
     compatibilityMode: runtime.config.compatibilityMode,
     now,

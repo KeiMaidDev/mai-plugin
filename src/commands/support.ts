@@ -16,6 +16,7 @@ import {
   createQqMarkdownImage,
   type AssetTransformer,
 } from '../platform/qq-markdown-image'
+import type { GuessCardFallbackInput } from '../platform/guess-message'
 import type { QqKeyboard } from '../platform/qq-message'
 import type { MaiRenderer } from '../render/mai-renderer'
 import type { AliasService } from '../services/alias-service'
@@ -26,7 +27,7 @@ import type { GuessService } from '../services/guess-service'
 import type { UpdateService } from '../services/update-service'
 import { PublicCallbackUnavailableError } from '../services/update-service'
 import { ProviderOAuthRequiredError } from '../providers/errors'
-import { mapQueryError } from '../platform/fallback-message'
+import { mapQueryError, type FallbackElement } from '../platform/fallback-message'
 import type { Awaitable } from '../types'
 import type { Semaphore } from '../utils/semaphore'
 
@@ -89,6 +90,8 @@ export interface CoreCommandDependencies {
     | 'dispose'
   >
   renderer: MaiRenderer
+  /** Renders the fallback PNG of a guess card where QQ Markdown is unavailable. */
+  guessCardRender?: (input: GuessCardFallbackInput) => Promise<Buffer>
   assetTransformer?: AssetTransformer
   administrators?: readonly string[]
   compatibilityMode?: boolean
@@ -107,7 +110,9 @@ export interface ReplyCommandDependencies {
 
 export interface ReplyMarkdownImageOptions {
   alt: string
-  keyboard: QqKeyboard
+  title?: string
+  caption?: readonly string[]
+  keyboard?: QqKeyboard
 }
 
 export interface QqCommandGuidanceButton {
@@ -369,7 +374,11 @@ export async function replyMarkdownImage(
   options: ReplyMarkdownImageOptions,
 ) {
   const compatibilityMode = await compatibilityModeFor(session, dependencies)
-  const fallback = { type: 'image' as const, data: image, mimeType: 'image/png' }
+  const caption = (options.caption ?? []).filter(line => line.trim())
+  const fallback: FallbackElement[] = [
+    { type: 'image', data: image, mimeType: 'image/png' },
+    ...(caption.length ? [{ type: 'text' as const, text: caption.join('\n') }] : []),
+  ]
   if (session.platform !== 'qq' || compatibilityMode || !dependencies.assetTransformer) {
     await sendReply(session, fallback, undefined, { compatibilityMode })
     return
@@ -379,6 +388,8 @@ export async function replyMarkdownImage(
     rich = await createQqMarkdownImage({
       image,
       alt: options.alt,
+      title: options.title,
+      caption,
       keyboard: options.keyboard,
       assets: dependencies.assetTransformer,
     })
@@ -387,6 +398,47 @@ export async function replyMarkdownImage(
     return
   }
   await sendReply(session, fallback, rich, { compatibilityMode })
+}
+
+export const QUERY_RESULT_TITLE = '查询结果'
+
+export function generationTimeLine(elapsedMs: number) {
+  return `生成时间：${elapsedMs}ms`
+}
+
+export interface QueryResultImageOptions {
+  image: Buffer | Uint8Array
+  alt: string
+  elapsedMs?: number
+  keyboard?: QqKeyboard
+}
+
+/**
+ * Reply with a query result image: the shared result title above it on QQ, plus
+ * the generation time line below it when the caller measured a render.
+ */
+export async function replyQueryResultImage(
+  session: ActiveCommandSession,
+  dependencies: ReplyCommandDependencies & Pick<CoreCommandDependencies, 'assetTransformer'>,
+  options: QueryResultImageOptions,
+) {
+  await replyMarkdownImage(session, dependencies, options.image, {
+    alt: options.alt,
+    title: QUERY_RESULT_TITLE,
+    caption: options.elapsedMs === undefined ? undefined : [generationTimeLine(options.elapsedMs)],
+    keyboard: options.keyboard,
+  })
+}
+
+export interface TimedRender<T> {
+  image: T
+  elapsedMs: number
+}
+
+export async function renderTimed<T>(render: () => Promise<T>): Promise<TimedRender<T>> {
+  const start = performance.now()
+  const image = await render()
+  return { image, elapsedMs: Math.max(0, Math.round(performance.now() - start)) }
 }
 
 export async function replyAudio(session: ActiveCommandSession, audio: Buffer | Uint8Array) {

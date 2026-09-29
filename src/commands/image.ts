@@ -1,5 +1,4 @@
 import type { Context } from 'koishi'
-import h from '@satorijs/element'
 import { MusicDifficulty } from '../domain/enums'
 import type { ChartInfo, MusicInfo, RecordEntry } from '../domain/music'
 import type { RecordsResponse } from '../domain/player'
@@ -10,20 +9,21 @@ import {
   createQqCommandAction,
   createPagedCommandButtons,
   createQqKeyboard,
-  createQqNativeMarkdown,
 } from '../platform/qq-message'
+import { providerLabel } from '../providers/labels'
 import { filterCharts, filterMusics, filterRecords } from '../query/combo-executor'
 import { parseComboQuery } from '../query/combo-parser'
 import type { ComboFilter } from '../query/filter-types'
 import {
   commandAction,
-  replyImage,
-  replyMarkdownImage,
+  renderTimed,
   replyQueryError,
+  replyQueryResultImage,
   replyText,
   SCORE_LIST_PAGE_SIZE,
   type ActiveCommandSession,
   type CoreCommandDependencies,
+  type TimedRender,
 } from './support'
 
 function querySession(session: ActiveCommandSession) {
@@ -118,6 +118,17 @@ function splitRatingRecords(records: readonly RecordEntry[], total: number) {
   }
 }
 
+function ratingTitle(
+  backend: string,
+  oldRating: number,
+  newRating: number,
+  courseRating: number | null,
+  rating: number,
+) {
+  const coursePart = courseRating === null ? '' : ` + ${courseRating}`
+  return `[${backend}] ${oldRating} + ${newRating}${coursePart} = ${rating}`
+}
+
 function ratingRenderInput(
   backend: string,
   player: RecordsResponse['player'],
@@ -136,9 +147,8 @@ function ratingRenderInput(
   const selectedNew = newRecords.slice(0, newCount).map(normalize)
   const oldRating = selectedOld.reduce((sum, record) => sum + record.rating, 0)
   const newRating = selectedNew.reduce((sum, record) => sum + record.rating, 0)
-  const courseRating = legacy ? Rating.courseOld(player.course) : 0
-  const rating = oldRating + newRating + courseRating
-  const coursePart = courseRating ? ` + COURSE ${courseRating}` : ''
+  const courseRating = legacy ? Rating.courseOld(player.course) : null
+  const rating = oldRating + newRating + (courseRating ?? 0)
   return {
     backend,
     player,
@@ -149,13 +159,17 @@ function ratingRenderInput(
     newCount,
     newGroupDisabled,
     rating,
-    title: `[${backend}] B${oldCount} ${oldRating} + B${newCount} ${newRating}${coursePart} = ${rating}`,
+    title: ratingTitle(backend, oldRating, newRating, courseRating, rating),
   }
 }
 
 function scoreListPageCommand(filter: string, page: number) {
   const normalized = filter.trim()
   return `/mai 成绩列表${normalized ? ` ${normalized}` : ''} ${page}`
+}
+
+function scoreListTitle(filter: string, page: number, totalPages: number) {
+  return `${filter.trim() || '全部'}分数列表，第 ${page} 页 (共 ${totalPages} 页)`
 }
 
 async function createScoreListPage(
@@ -170,7 +184,7 @@ async function createScoreListPage(
   const currentPage = Math.min(Math.max(1, requestedPage), totalPages)
   const offset = (currentPage - 1) * SCORE_LIST_PAGE_SIZE
   const pageRecords = records.slice(offset, offset + SCORE_LIST_PAGE_SIZE)
-  const image = await dependencies.renderer.renderRating({
+  const { image, elapsedMs } = await renderTimed(() => dependencies.renderer.renderRating({
     backend,
     player: response.player,
     settings: response.settings,
@@ -179,17 +193,15 @@ async function createScoreListPage(
     oldCount: SCORE_LIST_PAGE_SIZE,
     newCount: 0,
     rating: response.player.rating,
-    title: `[${backend}] ${filter.trim() || '全部'}成绩列表 ${currentPage} / ${totalPages}`,
-  })
-  const text = `${currentPage} / ${totalPages}`
+    title: scoreListTitle(filter, currentPage, totalPages),
+  }))
   const row = createPagedCommandButtons({
     page: currentPage,
     totalPages,
     pageCommand: page => scoreListPageCommand(filter, page),
   })
   const keyboard = row.buttons.length ? createQqKeyboard([row]) : undefined
-  const rich = createQqNativeMarkdown(text, keyboard)
-  return { image, text, rich }
+  return { image, elapsedMs, keyboard }
 }
 
 function chartKey(chart: ChartInfo) {
@@ -248,6 +260,7 @@ async function renderLevelTable(
   session: ActiveCommandSession,
   dependencies: CoreCommandDependencies,
   title: string,
+  alt: string,
   charts: readonly ChartInfo[],
   records?: readonly RecordEntry[],
   completed = new Set<string>(),
@@ -263,7 +276,7 @@ async function renderLevelTable(
     showProgress: records !== undefined,
     progress: records === undefined ? undefined : levelProgress(charts, completed),
   })
-  await replyImage(session, dependencies, image)
+  await replyQueryResultImage(session, dependencies, { image, alt })
 }
 
 async function songByAlias(
@@ -307,20 +320,20 @@ export function registerImageCommands(
       const total = Number(match[2])
       const target = match[3]?.trim() ?? ''
       let isSelf = true
-      let image: Buffer | undefined
+      let rendered: TimedRender<Buffer> | undefined
       try {
         const user = await dependencies.queryService.getQueryParams(querySession(session), target)
         isSelf = user.isSelf !== false
         if (!filterText) {
           const { response, provider } = await dependencies.queryService.rating(user)
-          image = await dependencies.renderer.renderRating(ratingRenderInput(
-            provider.name,
+          rendered = await renderTimed(() => dependencies.renderer.renderRating(ratingRenderInput(
+            providerLabel(provider.id),
             response.player,
             response.settings,
             response.oldRatingList,
             response.newRatingList,
             total,
-          ))
+          )))
         } else {
           const selected = filtersAndCharts(dependencies, filterText)
           if (!selected?.musics.length) {
@@ -334,23 +347,25 @@ export function registerImageCommands(
             return
           }
           const split = splitRatingRecords(records, total)
-          image = await dependencies.renderer.renderRating(ratingRenderInput(
-            provider.name,
+          rendered = await renderTimed(() => dependencies.renderer.renderRating(ratingRenderInput(
+            providerLabel(provider.id),
             response.player,
             response.settings,
             split.oldRecords,
             split.newRecords,
             total,
             selected.filters.some(filter => filter.disable15),
-          ))
+          )))
         }
       } catch (error) {
         await commandFailure(session, dependencies, error, isSelf)
         return
       }
-      if (!image) return
-      await replyMarkdownImage(session, dependencies, image, {
+      if (!rendered) return
+      await replyQueryResultImage(session, dependencies, {
+        image: rendered.image,
         alt: `B${total}`,
+        elapsedMs: rendered.elapsedMs,
         keyboard: createRatingKeyboard(filterText, total),
       })
     })))
@@ -387,9 +402,12 @@ export function registerImageCommands(
         }
         const oldRecords = Array.from({ length: 35 }, () => record)
         const newRecords = Array.from({ length: 15 }, () => record)
-        const totalRating = record.rating * 50
-        const image = await dependencies.renderer.renderRating({
-          backend: provider.name,
+        const oldRating = record.rating * oldRecords.length
+        const newRating = record.rating * newRecords.length
+        const totalRating = oldRating + newRating
+        const backend = providerLabel(provider.id)
+        const { image, elapsedMs } = await renderTimed(() => dependencies.renderer.renderRating({
+          backend,
           player: rating.player,
           settings: rating.settings,
           oldRecords,
@@ -397,10 +415,12 @@ export function registerImageCommands(
           oldCount: oldRecords.length,
           newCount: newRecords.length,
           rating: totalRating,
-          title: `[${provider.name}] 歌50 ${record.chart.difficulty.brief}${music.id}. ${music.name} × 50 = ${totalRating}`,
-        })
-        await replyMarkdownImage(session, dependencies, image, {
-          alt: 'B50',
+          title: ratingTitle(backend, oldRating, newRating, null, totalRating),
+        }))
+        await replyQueryResultImage(session, dependencies, {
+          image,
+          alt: '歌50',
+          elapsedMs,
           keyboard: createSongRatingKeyboard(music, record.chart),
         })
       } catch (error) {
@@ -437,18 +457,17 @@ export function registerImageCommands(
         const rendered = await createScoreListPage(
           dependencies,
           response,
-          provider.name,
+          providerLabel(provider.id),
           records,
           filterText,
           page,
         )
-        await replyImage(
-          session,
-          dependencies,
-          rendered.image,
-          rendered.text,
-          rendered.rich,
-        )
+        await replyQueryResultImage(session, dependencies, {
+          image: rendered.image,
+          alt: '分数列表',
+          elapsedMs: rendered.elapsedMs,
+          keyboard: rendered.keyboard,
+        })
       } catch (error) {
         await commandFailure(session, dependencies, error, isSelf)
       }
@@ -463,7 +482,7 @@ export function registerImageCommands(
         return
       }
       try {
-        await renderLevelTable(session, dependencies, `${filterText}定数表`, selected.charts)
+        await renderLevelTable(session, dependencies, `${filterText}定数表`, '定数表', selected.charts)
       } catch (error) {
         await commandFailure(session, dependencies, error)
       }
@@ -489,6 +508,7 @@ export function registerImageCommands(
           session,
           dependencies,
           `${filterText}完成表`,
+          '完成表',
           selected.charts,
           response.records,
           completed,
@@ -523,6 +543,7 @@ export function registerImageCommands(
           session,
           dependencies,
           `${filterText}未完成表`,
+          '未完成表',
           remains,
           response.records,
           completed,
@@ -558,7 +579,7 @@ export function registerImageCommands(
           ? response.filter(record => record.chart.difficulty === difficulty)
           : response
         const image = await dependencies.renderer.renderScore({ music, records })
-        await replyImage(session, dependencies, image)
+        await replyQueryResultImage(session, dependencies, { image, alt: '单曲成绩' })
       } catch (error) {
         await commandFailure(session, dependencies, error, isSelf)
       }
@@ -602,7 +623,7 @@ export function registerImageCommands(
             record: response.records.find(record => chartKey(record.chart) === chartKey(chart)),
           })),
         })
-        await replyImage(session, dependencies, image)
+        await replyQueryResultImage(session, dependencies, { image, alt: '段位表' })
       } catch (error) {
         await commandFailure(session, dependencies, error, isSelf)
       }

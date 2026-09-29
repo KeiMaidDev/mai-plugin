@@ -9,14 +9,35 @@ export interface AssetTransformer {
 export interface QqMarkdownImageOptions {
   image: Buffer | Uint8Array
   alt: string
-  keyboard: QqKeyboard
+  /** Bold heading rendered above the image, matching the reference result message. */
+  title?: string
+  /** Lines rendered below the image as a Markdown quote block. */
+  caption?: readonly string[]
+  /** How caption lines are rendered. Query results quote them; guess cards do not. */
+  captionStyle?: 'quote' | 'plain'
+  /** Inline Markdown size, in pixels. Defaults to the image's own pixel size. */
+  displaySize?: { width: number, height: number }
+  /** MIME type declared to the assets service. Defaults to PNG. */
+  mimeType?: string
+  keyboard?: QqKeyboard
   assets: AssetTransformer
 }
+
+export const DEFAULT_QQ_MARKDOWN_MIME_TYPE = 'image/png'
 
 function assertDimensions(width: number, height: number) {
   if (!Number.isInteger(width) || width <= 0 || !Number.isInteger(height) || height <= 0) {
     throw new RangeError('QQ Markdown image dimensions must be positive integers.')
   }
+}
+
+function assertImageAlt(alt: string) {
+  const normalized = alt.trim()
+  if (!normalized) throw new TypeError('QQ Markdown image alt text must be non-empty.')
+  if (normalized !== alt || /[\r\n\]]/u.test(normalized)) {
+    throw new TypeError('QQ Markdown image alt text must be a single line without brackets.')
+  }
+  return normalized
 }
 
 function parsePublicImageUrl(value: string) {
@@ -34,14 +55,34 @@ function parsePublicImageUrl(value: string) {
 
 export function createQqMarkdownImageContent(url: string, width: number, height: number, alt: string) {
   assertDimensions(width, height)
-  if (!/^B(?:15|25|35|40|50)$/.test(alt)) {
-    throw new TypeError('QQ Markdown image alt text must be a supported Rating label.')
-  }
+  const label = assertImageAlt(alt)
   const serializedUrl = parsePublicImageUrl(url)
     .toString()
     .replaceAll('(', '%28')
     .replaceAll(')', '%29')
-  return `![${alt} #${width}px #${height}px](${serializedUrl})`
+  return `![${label} #${width}px #${height}px](${serializedUrl})`
+}
+
+/**
+ * Assemble the result message the way the reference implementation does: a bold
+ * heading line, the image, then the caption. Query results quote the caption;
+ * guess cards append it as plain lines.
+ */
+export function createQqMarkdownResultContent(
+  imageLine: string,
+  title?: string,
+  caption: readonly string[] = [],
+  captionStyle: 'quote' | 'plain' = 'quote',
+) {
+  const blocks: string[] = []
+  const heading = title?.trim()
+  if (heading) blocks.push(`**${heading}**`)
+  blocks.push(imageLine)
+  const lines = caption.filter(line => line.trim())
+  if (lines.length) {
+    blocks.push(captionStyle === 'quote' ? lines.map(line => `> ${line}`).join('\n') : lines.join('\n'))
+  }
+  return blocks.join('\n\n')
 }
 
 function transformedImageUrl(content: string) {
@@ -73,14 +114,15 @@ export async function transformAssetImageUrl(
 
 export async function createQqMarkdownImage(options: QqMarkdownImageOptions) {
   const image = Buffer.from(options.image)
-  const { width, height } = imageSize(image)
-  assertDimensions(width, height)
-  const transformed = await options.assets.transform(h.image(image, 'image/png').toString())
-  const content = createQqMarkdownImageContent(
-    transformedImageUrl(transformed),
-    width,
-    height,
-    options.alt,
+  const mimeType = options.mimeType ?? DEFAULT_QQ_MARKDOWN_MIME_TYPE
+  const size = options.displaySize ?? imageSize(image)
+  assertDimensions(size.width, size.height)
+  const transformed = await options.assets.transform(h.image(image, mimeType).toString())
+  const content = createQqMarkdownResultContent(
+    createQqMarkdownImageContent(transformedImageUrl(transformed), size.width, size.height, options.alt),
+    options.title,
+    options.caption,
+    options.captionStyle,
   )
   return createQqNativeMarkdown(content, options.keyboard)
 }

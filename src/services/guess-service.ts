@@ -7,7 +7,33 @@ export const CLASSICAL_HINT_COUNT = 6
 export const CLASSICAL_HINT_COOLDOWN_MS = 10_000
 export const CLASSICAL_REVEAL_DELAY_MS = 30_000
 export const OPENING_MAX_SONGS = 8
-export const OPENING_MAX_LETTERS = 8
+
+/** Keywords a player sends during a guessing game, spelled as the reference does. */
+export const GUESS_STOP_KEYWORD = '不玩了'
+export const OPENING_LETTER_KEYWORD = '开字母'
+export const OPENING_SONG_KEYWORD = '开歌'
+
+/** Headlines a finished game reports, spelled as the reference does. */
+export const CLASSICAL_HIT_TITLE = '恭喜你猜中了哦~'
+export const CLASSICAL_MISS_TITLE = '很遗憾，没有人猜中哦'
+export const CLASSICAL_STOP_TITLE = '游戏已结束。答案如下：'
+export const OPENING_FINISH_TITLE = '恭喜您猜出了全部歌曲！'
+
+export const CLASSICAL_CROP_HINT = '这首歌的封面部分如图，30秒后将揭晓答案哦~'
+
+const CLASSICAL_INTRO = [
+  '这是一个 maimai 猜歌小游戏~',
+  '你需要根据以下信息猜出以下是 maimai 中收录的哪一首歌。回复歌曲名称作答，说“不玩了”可以结束游戏哦~',
+  '管理员可以通过发送“/mai 禁用猜歌”来关闭猜歌',
+].join('\n')
+
+function openingIntro(songCount: number) {
+  return [
+    '这是一个 maimai 猜歌小游戏~',
+    `你需要猜出${songCount}首来自 maimai 的歌曲曲名！回复“开字母”来尝试开一次字母，说“开歌”来直接开出歌曲，说“不玩了”可以结束游戏哦~`,
+    '管理员可以在游戏结束后发送“/mai 禁用猜歌”来关闭猜歌功能',
+  ].join('\n')
+}
 
 export type GuessGameType = 'classical' | 'opening'
 
@@ -28,9 +54,47 @@ export interface GuessMessage extends GuessInteraction {
   content: string
 }
 
+/** Which keyboard a guess reply offers on QQ. */
+export type GuessKeyboardKind = 'none' | 'answer' | 'guess-replay' | 'opening' | 'opening-replay'
+
+/** A song cover, as loaded for the crop slice and for a guess card. */
+export interface GuessCoverImage {
+  data: Buffer
+  mimeType: string
+  width: number
+  height: number
+}
+
+export interface OpeningBoardEntry {
+  name: string
+  revealed: boolean
+  /** Song name with every unopened character replaced by `?`. */
+  masked: string
+}
+
+export interface OpeningBoardView {
+  entries: readonly OpeningBoardEntry[]
+  opened: readonly string[]
+  revealAll: boolean
+}
+
 export type GuessReply =
-  | { type: 'text', text: string }
-  | { type: 'image', text: string, image: Buffer }
+  | { type: 'text', text: string, keyboard: GuessKeyboardKind }
+  | {
+      type: 'song-card'
+      caption: readonly string[]
+      cover: GuessCoverImage
+      /** Cover slice for the hint phase; null once the jacket itself is revealed. */
+      crop: Buffer | null
+      keyboard: GuessKeyboardKind
+    }
+  | {
+      type: 'opening-board'
+      board: OpeningBoardView
+      /** Line reported above the board, used when a direct answer reveals a song. */
+      note: string | null
+      keyboard: GuessKeyboardKind
+    }
 
 export interface ClassicalGuessStatus {
   version: 1
@@ -75,8 +139,8 @@ export interface GuessAliasServicePort {
 }
 
 export interface GuessRendererPort {
-  renderCrop(input: { contextId: string, music: MusicInfo, seed: string }): Promise<Buffer>
-  renderFinal(input: { music: MusicInfo, title: string, description: string }): Promise<Buffer>
+  loadCover(music: MusicInfo): Promise<GuessCoverImage>
+  renderCrop(input: { cover: GuessCoverImage, seed: string }): Promise<Buffer>
 }
 
 export interface GuessTimerPort {
@@ -189,7 +253,6 @@ function isOpeningStatus(value: unknown): value is OpeningGuessStatus {
       && typeof item.revealed === 'boolean'
     ))
     || !Array.isArray(value.opened)
-    || value.opened.length > OPENING_MAX_LETTERS
   ) return false
   const musicIds = value.musics.map(item => item.musicId)
   if (new Set(musicIds).size !== musicIds.length) return false
@@ -218,8 +281,8 @@ function shuffleStable<T>(values: readonly T[], random: () => number) {
     .map(entry => entry.value)
 }
 
-function textReply(text: string): GuessReply {
-  return { type: 'text', text }
+function textReply(text: string, keyboard: GuessKeyboardKind = 'none'): GuessReply {
+  return { type: 'text', text, keyboard }
 }
 
 function copyTarget(target: GuessTarget): GuessTarget {
@@ -233,8 +296,26 @@ function copyTarget(target: GuessTarget): GuessTarget {
   }
 }
 
-function songDescription(music: MusicInfo) {
-  return `${music.id}. ${music.name}\n曲师：${music.artist || '未知'}\nBPM：${music.bpm}`
+/**
+ * The reference song information block: one line per field, in the reference
+ * order and wording, with one decimal place for levels and fitted levels.
+ */
+export function guessInfoLines(music: MusicInfo) {
+  const levels = music.charts.map(chart => chart.levelValue.toFixed(1)).join('/')
+  const fitted = music.charts
+    .map(chart => (chart.fitLevelValue ? chart.fitLevelValue.toFixed(1) : '-'))
+    .join('/')
+  const designers = music.charts.map(chart => chart.notesDesigner || '-').join('/')
+  return [
+    `${music.id}. ${music.name}`,
+    `艺术家: ${music.artist || '未知'}`,
+    `分类：${music.genre.genreName}`,
+    `版本：${music.version.name}${music.isNew ? ' (计入b15)' : ''}`,
+    `BPM：${music.bpm}`,
+    `定数：${levels}`,
+    `拟合定数：${fitted}`,
+    `谱师：${designers}`,
+  ]
 }
 
 export class GuessService {
@@ -279,7 +360,7 @@ export class GuessService {
       }
       this.updateInteraction(current, message)
       const content = message.content.trim()
-      if (content.startsWith('不玩了')) {
+      if (content.startsWith(GUESS_STOP_KEYWORD)) {
         await this.stopForUser(current)
         return { consumed: true, action: 'stopped' }
       }
@@ -430,12 +511,8 @@ export class GuessService {
     await this.persist(runtime, status)
     this.active.set(interaction.contextId, runtime)
     try {
-      await runtime.reply(textReply([
-        '这是一个 maimai 猜歌小游戏~',
-        '你需要根据接下来的提示猜出歌曲名称。',
-        '回复歌曲名作答，说“不玩了”可以结束游戏。',
-      ].join('\n')))
-      await runtime.reply(textReply(hints[0]))
+      await runtime.reply(textReply(CLASSICAL_INTRO))
+      await runtime.reply(textReply(hints[0], 'answer'))
       this.scheduleClassical(runtime)
       return { ok: true, type: 'classical' }
     } catch (error) {
@@ -465,12 +542,13 @@ export class GuessService {
     await this.persist(runtime, status)
     this.active.set(interaction.contextId, runtime)
     try {
-      await runtime.reply(textReply([
-        '这是一个 maimai 猜歌小游戏~',
-        `你需要猜出 ${selected.length} 首来自 maimai 的歌曲曲名！`,
-        '发送“开字母 X”开出字符，发送“开歌 曲名”直接开歌，说“不玩了”结束游戏。',
-      ].join('\n')))
-      await runtime.reply(textReply(this.openingBoard(status)))
+      await runtime.reply(textReply(openingIntro(selected.length)))
+      await runtime.reply({
+        type: 'opening-board',
+        board: this.openingBoard(status),
+        note: null,
+        keyboard: 'opening',
+      })
       return { ok: true, type: 'opening' }
     } catch (error) {
       await this.removeRuntime(runtime)
@@ -534,7 +612,7 @@ export class GuessService {
     if (!this.matchesAnswerTitle(status.musicId, answers)) {
       return { consumed: true, action: 'ignored' }
     }
-    await this.finishClassical(runtime, '恭喜你猜中了哦~')
+    await this.finishClassical(runtime, CLASSICAL_HIT_TITLE)
     return { consumed: true, action: 'correct' }
   }
 
@@ -543,20 +621,15 @@ export class GuessService {
     content: string,
   ): Promise<GuessHandleResult> {
     const status = runtime.status as OpeningGuessStatus
-    const letterMatch = content.match(/^开字母(?:\s+(.*))?$/u)
-    if (letterMatch) {
-      const rawCharacter = (letterMatch[1] ?? '').trim()
-      const character = normalizeCharacter(rawCharacter)
-      if (Array.from(character).length !== 1 || !character.trim()) {
-        await runtime.reply(textReply('请在“开字母”后输入一个字符。'))
+    if (content.startsWith(OPENING_LETTER_KEYWORD)) {
+      const rawCharacter = Array.from(content.slice(OPENING_LETTER_KEYWORD.length).trim())[0] ?? ''
+      if (!rawCharacter) {
+        await runtime.reply(textReply(`请在“${OPENING_LETTER_KEYWORD}”后输入一个字符。`))
         return { consumed: true, action: 'invalid' }
       }
+      const character = normalizeCharacter(rawCharacter)
       if (status.opened.includes(character)) {
         await runtime.reply(textReply(`字母“${rawCharacter}”已经开过了！`))
-        return { consumed: true, action: 'invalid' }
-      }
-      if (status.opened.length >= OPENING_MAX_LETTERS) {
-        await runtime.reply(textReply(`最多只能开 ${OPENING_MAX_LETTERS} 个字母。`))
         return { consumed: true, action: 'invalid' }
       }
       const opened = [...status.opened, character]
@@ -567,11 +640,10 @@ export class GuessService {
       return this.updateOpening(runtime, { ...status, opened, musics })
     }
 
-    const songMatch = content.match(/^开歌(?:\s+(.*))?$/u)
-    if (songMatch) {
-      const query = (songMatch[1] ?? '').trim()
+    if (content.startsWith(OPENING_SONG_KEYWORD)) {
+      const query = content.slice(OPENING_SONG_KEYWORD.length).trim()
       if (!query) {
-        await runtime.reply(textReply('请在“开歌”后输入歌曲名称。'))
+        await runtime.reply(textReply(`请在“${OPENING_SONG_KEYWORD}”后输入歌曲名称。`))
         return { consumed: true, action: 'invalid' }
       }
       const answers = await this.options.aliasService.search(query)
@@ -613,21 +685,31 @@ export class GuessService {
   private async updateOpening(
     runtime: ActiveGuessGame,
     next: OpeningGuessStatus,
-    prefix = '',
+    note = '',
   ): Promise<GuessHandleResult> {
     if (next.musics.every(item => item.revealed)) {
       const finished: OpeningGuessStatus = { ...next, phase: 'finished' }
       await this.persist(runtime, finished)
       try {
-        await runtime.reply(textReply(`恭喜您猜出了全部歌曲！\n${this.openingBoard(finished, true)}`))
+        await runtime.reply(textReply(OPENING_FINISH_TITLE))
+        await runtime.reply({
+          type: 'opening-board',
+          board: this.openingBoard(finished, true),
+          note: null,
+          keyboard: 'opening-replay',
+        })
       } finally {
         await this.removeRuntime(runtime)
       }
       return { consumed: true, action: 'correct' }
     }
     await this.persist(runtime, next)
-    const board = this.openingBoard(next)
-    await runtime.reply(textReply(prefix ? `${prefix}\n${board}` : board))
+    await runtime.reply({
+      type: 'opening-board',
+      board: this.openingBoard(next),
+      note: note || null,
+      keyboard: 'opening',
+    })
     return { consumed: true, action: 'updated' }
   }
 
@@ -647,37 +729,38 @@ export class GuessService {
     return answers.slice(0, 10).some(answer => normalizeSearchText(answer.name) === title)
   }
 
-  private openingBoard(status: OpeningGuessStatus, revealAll = false) {
+  private openingBoard(status: OpeningGuessStatus, revealAll = false): OpeningBoardView {
     const opened = new Set(status.opened)
-    const lines = ['舞萌开字母']
+    const entries: OpeningBoardEntry[] = []
     for (const item of status.musics) {
       const music = this.options.musics.get(item.musicId)
       if (!music) continue
-      if (item.revealed) {
-        lines.push(`✅ ${music.name}`)
-        continue
-      }
-      const name = revealAll
-        ? music.name
-        : Array.from(music.name).map(character => (
-            !character.trim() || opened.has(normalizeCharacter(character)) ? character : '?'
-          )).join('')
-      lines.push(`${revealAll ? '❌' : '🤔'} ${name}`)
+      entries.push({
+        name: music.name,
+        revealed: item.revealed,
+        masked: Array.from(music.name).map(character => (
+          !character.trim() || opened.has(normalizeCharacter(character)) ? character : '?'
+        )).join(''),
+      })
     }
-    lines.push(`已开出字母：${status.opened.join(', ') || '无'}`)
-    return lines.join('\n')
+    return { entries, opened: [...status.opened], revealAll }
   }
 
   private async stopForUser(runtime: ActiveGuessGame) {
     if (runtime.type === 'classical') {
-      await this.finishClassical(runtime, '游戏已结束。答案如下：')
+      await this.finishClassical(runtime, CLASSICAL_STOP_TITLE)
       return
     }
     const status = runtime.status as OpeningGuessStatus
     const finished: OpeningGuessStatus = { ...status, phase: 'finished' }
     await this.persist(runtime, finished)
     try {
-      await runtime.reply(textReply(this.openingBoard(finished, true)))
+      await runtime.reply({
+        type: 'opening-board',
+        board: this.openingBoard(finished, true),
+        note: null,
+        keyboard: 'opening-replay',
+      })
     } finally {
       await this.removeRuntime(runtime)
     }
@@ -697,17 +780,23 @@ export class GuessService {
       nextAt: null,
     }
     await this.persist(runtime, finished)
-    const description = songDescription(music)
+    const caption = [title, ...guessInfoLines(music)]
     try {
-      let image: Buffer
+      let cover: GuessCoverImage
       try {
-        image = await this.options.renderer.renderFinal({ music, title, description })
+        cover = await this.options.renderer.loadCover(music)
       } catch (error) {
-        this.logger.warn(`[mai-plugin] guess final render failed: ${String(error)}`)
-        await runtime.reply(textReply(`${title}\n${description}`))
+        this.logger.warn(`[mai-plugin] guess cover load failed: ${String(error)}`)
+        await runtime.reply(textReply(caption.join('\n')))
         return
       }
-      await runtime.reply({ type: 'image', text: `${title}\n${description}`, image })
+      await runtime.reply({
+        type: 'song-card',
+        caption,
+        cover,
+        crop: null,
+        keyboard: 'guess-replay',
+      })
     } finally {
       await this.removeRuntime(runtime)
     }
@@ -745,7 +834,7 @@ export class GuessService {
       return
     }
     if (status.phase === 'hints' && status.hintIndex < status.hints.length) {
-      await runtime.reply(textReply(status.hints[status.hintIndex]))
+      await runtime.reply(textReply(status.hints[status.hintIndex], 'answer'))
       const next: ClassicalGuessStatus = {
         ...status,
         hintIndex: status.hintIndex + 1,
@@ -756,15 +845,14 @@ export class GuessService {
       return
     }
     if (status.phase === 'hints') {
-      const image = await this.options.renderer.renderCrop({
-        contextId: runtime.target.contextId,
-        music,
-        seed: status.seed,
-      })
+      const cover = await this.options.renderer.loadCover(music)
+      const crop = await this.options.renderer.renderCrop({ cover, seed: status.seed })
       await runtime.reply({
-        type: 'image',
-        text: '这首歌的封面部分如图，30 秒后将揭晓答案哦~',
-        image,
+        type: 'song-card',
+        caption: [CLASSICAL_CROP_HINT],
+        cover,
+        crop,
+        keyboard: 'answer',
       })
       const next: ClassicalGuessStatus = {
         ...status,
@@ -775,7 +863,7 @@ export class GuessService {
       this.scheduleClassical(runtime)
       return
     }
-    if (status.phase === 'crop') await this.finishClassical(runtime, '很遗憾，没有人猜中哦')
+    if (status.phase === 'crop') await this.finishClassical(runtime, CLASSICAL_MISS_TITLE)
   }
 
   private async failScheduledRuntime(contextId: string, token: object, error: unknown) {
