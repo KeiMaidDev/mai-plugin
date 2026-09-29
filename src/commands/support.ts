@@ -24,6 +24,7 @@ import type { AliasService } from '../services/alias-service'
 import type { QueryService } from '../services/query-service'
 import type { QueueService } from '../services/queue-service'
 import type { SettingService } from '../services/setting-service'
+import type { StatusService } from '../services/status-service'
 import type { GuessService } from '../services/guess-service'
 import type { UpdateService } from '../services/update-service'
 import { PublicCallbackUnavailableError } from '../services/update-service'
@@ -91,6 +92,10 @@ export interface CoreCommandDependencies {
     | 'dispose'
   >
   renderer: MaiRenderer
+  /** Server-status bulletin; stays absent when commands are assembled without it. */
+  statusService?: Pick<StatusService, 'snapshot'>
+  /** Whether the deployment enables the server-status bulletin. */
+  statusEnabled?: boolean
   /** Renders the fallback PNG of a guess card where QQ Markdown is unavailable. */
   guessCardRender?: (input: GuessCardFallbackInput) => Promise<Buffer>
   assetTransformer?: AssetTransformer

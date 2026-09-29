@@ -48,3 +48,15 @@ The message presenting one guess image — a cover hint or a revealed song — u
 
 **Guess keyboard**:
 The buttons attached to a guess message, which either fill the client's input box or run a guessing command.
+
+**Server status**:
+The current availability of the Maimai DX game servers, as reported by the community status page.
+
+**Line group**:
+A group of monitored services that share one carrier route to the game servers. The CMCC, CT, and CU groups are Line groups; the overview and community-service groups are not.
+
+**Health verdict**:
+The single conclusion a Status bulletin states about whether the game servers are reachable: normal, partially degraded, or fully offline.
+
+**Status bulletin**:
+The reply that reports Server status: its Health verdict, one line table per group, any active announcement or planned maintenance, and the time of the newest reported heartbeat.

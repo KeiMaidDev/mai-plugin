@@ -7,6 +7,7 @@ import { registerMusicCommands } from './music'
 import { registerQueueCommands } from './queue'
 import { registerRecordCommands } from './record'
 import { registerSettingsCommands } from './settings'
+import { registerStatusCommands } from './status'
 import { registerUpdateCommands } from './update'
 import type { CoreCommandDependencies } from './support'
 import { PLUGIN_NAME } from '../constants'
@@ -57,6 +58,7 @@ const compatibilityPatterns = [
   /^绑定落雪$/,
   /^解绑落雪$/,
   /^解绑水鱼$/,
+  /^有网吗$/,
 ] as const
 
 export function isExactCompatibilityCommand(content: string) {
@@ -102,6 +104,7 @@ export function resolveCompatibilityExecution(content: string) {
     if (match) return `${command} ${commandArgument(match[1] ?? '')}`
   }
   if (/^今日舞萌$/.test(normalized)) return 'mai.daily'
+  if (/^有网吗$/.test(normalized)) return 'mai.status'
   if (/^绑定水鱼$/.test(normalized)) return 'mai.bind-diving-fish'
   if (/^绑定落雪$/.test(normalized)) return 'mai.bind-lxns'
   if (/^解绑落雪$/.test(normalized)) return 'mai.unbind-lxns'
@@ -226,6 +229,12 @@ export function registerCoreCommands(
     ...registerImageCommands(ctx, commandDependencies),
     ...registerRecordCommands(ctx, commandDependencies),
     ...registerCalcCommands(ctx, commandDependencies),
+    ...registerStatusCommands(ctx, {
+      statusService: commandDependencies.statusService,
+      enabled: commandDependencies.statusEnabled,
+      settingService: commandDependencies.settingService,
+      compatibilityMode: commandDependencies.compatibilityMode,
+    }),
     ...(dependencies.updateService ? registerUpdateCommands(ctx, {
       updateService: dependencies.updateService,
       settingService: dependencies.settingService,

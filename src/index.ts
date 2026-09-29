@@ -16,6 +16,7 @@ import { DivingFishProvider } from './providers/diving-fish'
 import { DivingFishOAuth } from './providers/diving-fish-oauth'
 import { LxnsProvider } from './providers/lxns'
 import { ProviderChain } from './providers/provider-chain'
+import { StatusPageProvider } from './providers/status-page'
 import { createGuessPresenter } from './platform/guess-message'
 import { TakumiMaiRenderer } from './render/mai-renderer'
 import { TakumiGuessRenderer } from './render/guess-template'
@@ -29,6 +30,7 @@ import { GuessService, type GuessReply, type GuessTarget } from './services/gues
 import { QqBindingRequiredError, QueryService } from './services/query-service'
 import { QueueService } from './services/queue-service'
 import { SettingService } from './services/setting-service'
+import { StatusService } from './services/status-service'
 import {
   lxnsCallbackUrl,
   PublicCallbackUnavailableError,
@@ -59,6 +61,7 @@ export * from './providers/errors'
 export * from './providers/diving-fish'
 export * from './providers/lxns'
 export * from './providers/provider-chain'
+export * from './providers/status-page'
 export * from './query/filter-types'
 export * from './query/combo-parser'
 export * from './query/combo-rules'
@@ -68,6 +71,7 @@ export * from './services/guess-service'
 export * from './services/query-service'
 export * from './services/queue-service'
 export * from './services/setting-service'
+export * from './services/status-service'
 export * from './services/update-service'
 export * from './server/callback-store'
 export * from './server/lxns-callback'
@@ -81,6 +85,7 @@ export * from './commands/music'
 export * from './commands/queue'
 export * from './commands/record'
 export * from './commands/settings'
+export * from './commands/status'
 export * from './commands/update'
 export * from './commands/support'
 export * from './platform/admin'
@@ -88,6 +93,7 @@ export * from './platform/fallback-message'
 export * from './platform/guess-message'
 export * from './platform/qq-markdown-image'
 export * from './platform/qq-message'
+export * from './platform/status-message'
 export * from './render/assets'
 export * from './render/course-template'
 export * from './render/guess-template'
@@ -276,6 +282,17 @@ export async function createDefaultCommandDependencies(
     divingFishOAuth,
     debug,
   })
+  const statusService = new StatusService({
+    source: new StatusPageProvider({
+      http: ctx.http,
+      baseUrl: runtime.config.status.apiBaseUrl,
+      timeoutMs: runtime.config.status.timeoutMs,
+      logger,
+    }),
+    verdictGroups: runtime.config.status.verdictGroups,
+    cacheTtlMs: runtime.config.status.cacheTtlMs,
+    now,
+  })
 
   return {
     data,
@@ -285,6 +302,8 @@ export async function createDefaultCommandDependencies(
     bindRepository: repositories.bind,
     queueService,
     updateService,
+    statusService,
+    statusEnabled: runtime.config.status.enabled,
     guessService,
     settingRepository: repositories.setting,
     renderer: new TakumiMaiRenderer(services.renderer, data, runtime.config.ratingFooterText),

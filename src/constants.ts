@@ -2,6 +2,12 @@ export const PLUGIN_NAME = 'mai-plugin'
 
 export const DEFAULT_RATING_FOOTER_TEXT = '样式参考可怜Bot | https://bot-docs.otmdb.cn'
 
+/** Status page used by the server-status bulletin when the deployment configures nothing else. */
+export const DEFAULT_STATUS_PAGE_BASE_URL = 'https://status.awmc.cc'
+
+/** Line groups that decide the health verdict, as regex sources matched against the group name. */
+export const DEFAULT_STATUS_VERDICT_GROUPS = ['CMCC', 'CT', 'CU'] as const
+
 export const INJECTED_SERVICES = ['database', 'server'] as const
 
 /**

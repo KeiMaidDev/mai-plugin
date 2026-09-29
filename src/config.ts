@@ -1,5 +1,9 @@
 import Schema from 'schemastery'
-import { DEFAULT_RATING_FOOTER_TEXT } from './constants'
+import {
+  DEFAULT_RATING_FOOTER_TEXT,
+  DEFAULT_STATUS_PAGE_BASE_URL,
+  DEFAULT_STATUS_VERDICT_GROUPS,
+} from './constants'
 import {
   DEFAULT_LXNS_CALLBACK_PATH,
   LXNS_CALLBACK_PATH_PATTERN,
@@ -8,6 +12,13 @@ import {
 export interface Config {
   developerTokens: {
     lxns: string
+  }
+  status: {
+    enabled: boolean
+    timeoutMs: number
+    apiBaseUrl: string
+    verdictGroups: string[]
+    cacheTtlMs: number
   }
   divingFishOAuth: {
     clientId: string
@@ -87,6 +98,18 @@ export const ConfigSchema: Schema<Config> = Schema.object({
     timeoutMs: Schema.natural().min(1_000).max(120_000).default(30_000)
       .description('单个图片渲染任务的超时时间，单位为毫秒'),
   }).description('图片渲染'),
+  status: Schema.object({
+    enabled: Schema.boolean().default(true)
+      .description('是否注册服务器状态播报指令；关闭时不注册任何相关指令'),
+    timeoutMs: Schema.natural().min(1_000).max(120_000).default(5_000)
+      .description('状态页请求的超时时间，单位为毫秒'),
+    apiBaseUrl: Schema.string().default(DEFAULT_STATUS_PAGE_BASE_URL)
+      .description('状态页的基础 URL'),
+    verdictGroups: Schema.array(Schema.string()).default([...DEFAULT_STATUS_VERDICT_GROUPS])
+      .description('参与健康结论判定的线路组，按正则字符串匹配分组名；社区服务组只展示不判定'),
+    cacheTtlMs: Schema.natural().max(600_000).default(30_000)
+      .description('状态页响应的缓存时间，单位为毫秒；为 0 时不缓存'),
+  }).description('服务器状态播报'),
   ratingFooterText: Schema.string().default(DEFAULT_RATING_FOOTER_TEXT)
     .description('图片渲染共用的底部文字；留空仅显示底栏。'),
   publicBaseUrl: Schema.string().default('')
