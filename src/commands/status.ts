@@ -2,7 +2,15 @@ import type { Command, Context } from 'koishi'
 import h from '@satorijs/element'
 import { PLUGIN_NAME, isRichTextPlatform } from '../constants'
 import type { FallbackElement } from '../platform/fallback-message'
-import { createQqNativeMarkdown, sendReply } from '../platform/qq-message'
+import {
+  createQqButton,
+  createQqButtonRow,
+  createQqCommandAction,
+  createQqKeyboard,
+  createQqNativeMarkdown,
+  sendReply,
+  type QqKeyboard,
+} from '../platform/qq-message'
 import {
   transformAssetImageUrl,
   type AssetTransformer,
@@ -38,10 +46,30 @@ export interface StatusCommandDependencies extends ReplyCommandDependencies {
 }
 
 /**
+ * What the Refresh button sends. `mai.status` carries the `mai.有网吗` alias, and
+ * Koishi reads `/mai` plus every following token as a dotted subcommand path, so
+ * the button arrives at the same command a typed `/mai 有网吗` does — no callback
+ * payload and no second parsing path.
+ */
+export const STATUS_REFRESH_COMMAND = '/mai 有网吗'
+
+/** The one-row keyboard the Markdown bulletin carries. */
+export function createStatusKeyboard(): QqKeyboard {
+  return createQqKeyboard([createQqButtonRow([
+    createQqButton(
+      'status-refresh',
+      '刷新',
+      createQqCommandAction(STATUS_REFRESH_COMMAND, { enter: true }),
+    ),
+  ])])
+}
+
+/**
  * The status bulletin at the send boundary. QQ picks the Markdown form of the
  * same snapshot; every other platform, and compatibility mode, gets the banner
  * as an ordinary image element followed by the plain text. A banner that cannot
- * be read or uploaded costs the reply the banner, never the reply itself.
+ * be read or uploaded costs the reply the banner — and, with it, the button that
+ * rides the Markdown form — never the reply itself.
  */
 export async function replyStatusBulletin(
   session: ActiveCommandSession,
@@ -67,7 +95,7 @@ export async function replyStatusBulletin(
     && isRichTextPlatform(session.platform) && !compatibilityMode) {
     try {
       const url = await transformAssetImageUrl(banner, 'image/png', dependencies.assetTransformer)
-      rich = createQqNativeMarkdown(formatStatusMarkdown(snapshot, url))
+      rich = createQqNativeMarkdown(formatStatusMarkdown(snapshot, url), createStatusKeyboard())
     } catch {
       rich = undefined
     }

@@ -63,3 +63,6 @@ The reply that reports Server status: its Health verdict, the Banner, one table 
 
 **Banner**:
 The status artwork a Status bulletin carries for its Health verdict: the green artwork when every Line group is healthy, the amber one when only some are, and the gray one when none is.
+
+**Refresh button**:
+The button a Status bulletin offers on a rich-text platform so that a player can ask for Server status again without retyping the command. It has no counterpart in the plain-text form.
