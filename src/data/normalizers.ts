@@ -317,6 +317,23 @@ function normalizeMusics(value: unknown, versions: Map<string, GameVersion>) {
   return uniqueMap(musics, music => music.id, 'musics')
 }
 
+function normalizeCollections(value: unknown, path: string) {
+  return array(value ?? [], path).map((entry, index) => {
+    const entryPath = `${path}[${index}]`
+    const input = record(entry, entryPath)
+    const id = integer(input.id, `${entryPath}.id`, 1)
+    return {
+      id,
+      filename: `${id}.png`,
+      name: string(input.name, `${entryPath}.name`),
+      genre: string(input.genre ?? '', `${entryPath}.genre`, true),
+      hint: string(input.description ?? input.hint ?? '', `${entryPath}.hint`, true),
+      requires: [],
+      remasters: [],
+    }
+  })
+}
+
 function normalizePlates(value: unknown) {
   const plates = array(value, 'plates').map((entry, index): PlateInfo => {
     const path = `plates[${index}]`
@@ -391,6 +408,7 @@ function fromDivingFish(
   value: unknown[],
   revision: string,
   chartMetadata = new Map<number, DivingFishChartMetadata>(),
+  collections: { icons?: unknown; plates?: unknown } = {},
 ): UnknownRecord {
   const versionNames: string[] = []
   for (const [index, entry] of value.entries()) {
@@ -442,8 +460,8 @@ function fromDivingFish(
         }),
       }]
     }),
-    plates: [],
-    icons: [],
+    plates: normalizeCollections(collections.plates, 'plates'),
+    icons: normalizeCollections(collections.icons, 'icons'),
     courses: [],
   }
 }
@@ -523,26 +541,12 @@ function fromLxns(value: UnknownRecord, revision: string): UnknownRecord {
     })
   })
 
-  const collections = (key: 'icons' | 'plates') => array(value[key] ?? [], key).map((entry, index) => {
-    const path = `${key}[${index}]`
-    const input = record(entry, path)
-    return {
-      id: integer(input.id, `${path}.id`, 1),
-      filename: `${integer(input.id, `${path}.id`, 1)}.png`,
-      name: string(input.name, `${path}.name`),
-      genre: string(input.genre ?? '', `${path}.genre`, true),
-      hint: string(input.description ?? '', `${path}.description`, true),
-      requires: [],
-      remasters: [],
-    }
-  })
-
   return {
     revision,
     versions,
     musics,
-    icons: collections('icons'),
-    plates: collections('plates'),
+    icons: normalizeCollections(value.icons, 'icons'),
+    plates: normalizeCollections(value.plates, 'plates'),
     courses: [],
   }
 }
@@ -558,6 +562,7 @@ export function normalizeMaimaiSource(value: unknown, options: { revision?: stri
             array(raw.musicData, 'musicData'),
             string(raw.revision ?? options.revision, 'revision'),
             normalizeChartMetadata(raw.chartMetadata ?? []),
+            { icons: raw.icons, plates: raw.plates },
           )
       : raw
   const revision = string(input.revision ?? options.revision, 'revision')

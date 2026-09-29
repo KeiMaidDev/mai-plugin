@@ -463,6 +463,35 @@ export class MaimaiDataSyncService implements MaimaiAssetInvalidationSource {
     }
   }
 
+  private async publicCollections(staging: string) {
+    const requests = [
+      ['icons', LXNS_ICON_LIST_URL],
+      ['plates', LXNS_PLATE_LIST_URL],
+    ] as const
+    const collections: { icons: unknown[]; plates: unknown[] } = { icons: [], plates: [] }
+    await Promise.all(requests.map(async ([key, url]) => {
+      const target = join(staging, `lxns-${key}.json`)
+      try {
+        await this.cache.downloadComputed(url, target, {
+          timeoutMs: this.options.config.timeoutMs,
+          maxBytes: 32 * 1024 * 1024,
+          validateUrl: this.validateRemoteUrl,
+        })
+        const body = JSON.parse(await readFile(target, 'utf8')) as Record<string, unknown>
+        const list = body?.[key]
+        if (Array.isArray(list)) collections[key] = list
+      } catch (error) {
+        this.options.debug?.failure('data.collections.failure', error, {
+          source: 'lxns',
+          collection: key,
+        })
+      } finally {
+        await rm(target, { force: true })
+      }
+    }))
+    return collections
+  }
+
   private async syncProberSource() {
     const staging = await this.cache.createStagingDirectory()
     try {
@@ -502,6 +531,7 @@ export class MaimaiDataSyncService implements MaimaiAssetInvalidationSource {
         sourceType: 'diving-fish',
         musicData,
         chartMetadata,
+        ...await this.publicCollections(staging),
       }
       const serialized = `${JSON.stringify(payload)}\n`
       const revision = `diving-fish-${sha256(serialized).slice(0, 16)}`

@@ -150,8 +150,8 @@ async function promptForSettingValue(
     ? '\n使用方法：设置头像 <id/名称>\n\t例：设置头像 106103\n\t例：设置头像 高瀬 梨緒\n\n\t收藏品列表：https://otmdb.cn/bot/maimai/icons'
     : '\n使用方法：设置牌子/设置姓名框 id/名称\n\t例：设置牌子 100501\n\t例：设置牌子 晓将\n\t例：设置姓名框 7sRefちほー2\n\n\t牌子列表：https://otmdb.cn/bot/maimai/plates'
   const richText = label === '头像'
-    ? '**设置头像**\n\n使用方法：设置头像 id/名称\n👉设置头像 106103\n👉设置头像 高瀬 梨緒\n \n⏬您可以点击下方按钮查看头像列表。'
-    : '**设置牌子**\n\n使用方法：设置牌子/设置姓名框 id/名称\n👉设置牌子 100501\n👉设置牌子 晓将\n👉设置姓名框 7sRefちほー2\n \n⏬您可以点击下方按钮查看牌子列表。'
+    ? '## 设置头像\n\n使用方法：设置头像 id/名称\n👉设置头像 106103\n👉设置头像 高瀬 梨緒\n \n⏬您可以点击下方按钮查看头像列表。'
+    : '## 设置牌子\n\n使用方法：设置牌子/设置姓名框 id/名称\n👉设置牌子 100501\n👉设置牌子 晓将\n👉设置姓名框 7sRefちほー2\n \n⏬您可以点击下方按钮查看牌子列表。'
   const rich = createQqNativeMarkdown(richText, collectionSettingKeyboard(label))
   await replyText(session, dependencies, text, rich)
 }
