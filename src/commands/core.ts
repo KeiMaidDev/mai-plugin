@@ -51,7 +51,6 @@ const compatibilityPatterns = [
   /^查分设置$/,
   /^设置(?:mai|b50)$/i,
   /^(?:默认|设为默认)$/,
-  /^(?:更新|导)$/,
   /^绑定水鱼$/,
   /^绑定落雪$/,
   /^解绑落雪$/,
@@ -101,7 +100,6 @@ export function resolveCompatibilityExecution(content: string) {
     if (match) return `${command} ${commandArgument(match[1] ?? '')}`
   }
   if (/^今日舞萌$/.test(normalized)) return 'mai.daily'
-  if (/^(?:更新|导)$/.test(normalized)) return 'mai.update'
   if (/^绑定水鱼$/.test(normalized)) return 'mai.bind-diving-fish'
   if (/^绑定落雪$/.test(normalized)) return 'mai.bind-lxns'
   if (/^解绑落雪$/.test(normalized)) return 'mai.unbind-lxns'

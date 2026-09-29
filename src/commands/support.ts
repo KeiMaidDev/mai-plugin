@@ -80,15 +80,12 @@ export interface CoreCommandDependencies {
   >
   updateService?: Pick<
     UpdateService,
-    | 'beginDivingFishUpdate'
     | 'beginLxnsOAuth'
     | 'getBindingStatus'
     | 'unbindLxns'
     | 'unbindDivingFish'
     | 'beginDivingFishOAuth'
     | 'completeLxnsOAuth'
-    | 'createUpdateRedirect'
-    | 'completeDivingFishUpdate'
     | 'dispose'
   >
   renderer: MaiRenderer

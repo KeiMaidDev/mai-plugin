@@ -42,7 +42,6 @@
     "@satorijs/element": "^3.2.0",
     "@takumi-rs/helpers": "2.1.1",
     "@takumi-rs/wasm": "2.1.1",
-    "cheerio": "1.0.0",
     "image-size": "2.0.2",
     "opencc-js": "1.4.1",
     "schemastery": "^3.18.0"

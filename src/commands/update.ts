@@ -3,7 +3,6 @@ import { DivingFishOAuthError } from '../providers/diving-fish-oauth'
 import { ProviderOAuthRequiredError, ProviderRateLimitError, ProviderScopeError } from '../providers/errors'
 import {
   PublicCallbackUnavailableError,
-  UpdateBindingRequiredError,
   type UpdateService,
   type UpdateSessionLocator,
 } from '../services/update-service'
@@ -18,7 +17,6 @@ import {
 
 export type UpdateServicePort = Pick<
   UpdateService,
-  | 'beginDivingFishUpdate'
   | 'beginLxnsOAuth'
   | 'beginDivingFishOAuth'
   | 'unbindLxns'
@@ -91,7 +89,7 @@ async function updateFailure(
     ]]))
     return
   }
-  if (error instanceof UpdateBindingRequiredError || error instanceof ProviderOAuthRequiredError
+  if (error instanceof ProviderOAuthRequiredError
     || error instanceof DivingFishOAuthError && error.code === 'consent_required') {
     await replyText(session, dependencies, error.message, createQqCommandGuidance(error.message, [[{
       id: 'bind-diving-fish-oauth',
@@ -106,12 +104,12 @@ async function updateFailure(
     const text = error instanceof ProviderRateLimitError || error instanceof DivingFishOAuthError && error.code === 'slow_down'
       ? '水鱼授权请求过于频繁，请稍后重试。'
       : error instanceof ProviderScopeError || error instanceof DivingFishOAuthError && error.code === 'invalid_scope'
-        ? '水鱼应用缺少成绩读写权限，请联系部署者确认权限已获批。'
+        ? '水鱼应用缺少成绩读取权限，请联系部署者确认权限已获批。'
         : '水鱼 OAuth 配置无效或应用不可用，请联系部署者检查客户端 ID 和密钥。'
     await replyText(session, dependencies, text)
     return
   }
-  const text = '更新失败，请稍后重试。'
+  const text = '操作失败，请稍后重试。'
   await replyText(session, dependencies, text, createQqCommandGuidance(text, [[{
     id: retryCommand ? 'retry-update' : 'update-help',
     label: retryCommand ? '重试' : '返回帮助',
@@ -173,22 +171,6 @@ export function registerUpdateCommands(
           }))
         } catch (error) {
           await updateFailure(session, dependencies, error, '/mai 解绑水鱼')
-        }
-      })),
-    ctx.command('mai.update', '更新水鱼成绩')
-      .alias('mai.更新', 'mai.导')
-      .action(commandAction(async ({ session }) => {
-        try {
-          const url = await dependencies.updateService.beginDivingFishUpdate(
-            createUpdateSessionLocator(session, dependencies, ''),
-          )
-          await replyText(
-            session,
-            dependencies,
-            `${url}\n请在微信中打开该链接完成成绩更新。`,
-          )
-        } catch (error) {
-          await updateFailure(session, dependencies, error, '/mai 更新')
         }
       })),
     ctx.command('mai.bind-diving-fish', '绑定水鱼账号授权')

@@ -6,9 +6,8 @@ import { ProviderMalformedPayloadError, ProviderTransportError } from './errors'
 
 const AUTH = 'https://auth.diving-fish.com'
 const READ_SCOPE = 'prober.records.read'
-const SCOPES = 'prober.records.read prober.records.write'
 
-type Scope = 'prober.records.read' | 'prober.records.write' | typeof SCOPES
+type Scope = typeof READ_SCOPE
 export type OAuthSubject = `sub:${string}` | `username:${string}`
 
 export class DivingFishOAuthError extends Error {
@@ -98,18 +97,11 @@ export class DivingFishOAuth {
 
   async begin(session: BindSession) {
     if (this.disposed) throw new DivingFishOAuthError('disposed')
-    const authorize = (scope: Scope) => this.post('/oauth/device_authorization', {
-      ...this.credentials(), scope,
+    const data = await this.post('/oauth/device_authorization', {
+      ...this.credentials(), scope: READ_SCOPE,
       subject_ref: this.subjectRef(session.userId),
       binding_label: this.bindingLabel(session.userId),
     })
-    let data: unknown
-    try {
-      data = await authorize(SCOPES)
-    } catch (error) {
-      if (!(error instanceof DivingFishOAuthError) || error.code !== 'invalid_scope') throw error
-      data = await authorize(READ_SCOPE)
-    }
     if (!object(data) || typeof data.device_code !== 'string' || typeof data.user_code !== 'string'
       || typeof data.verification_uri_complete !== 'string'
       || !Number.isFinite(data.expires_in) || !Number.isFinite(data.interval)) {
@@ -255,10 +247,8 @@ export class DivingFishOAuth {
   async accessToken(subject: OAuthSubject, scope: Scope) {
     if (this.disposed) throw new DivingFishOAuthError('disposed')
     const key = `${subject}\0${scope}`
-    const combinedKey = `${subject}\0${SCOPES}`
-    const cached = [this.tokens.get(key), scope === SCOPES ? undefined : this.tokens.get(combinedKey)]
-      .find(token => token && token.expiresAt - 30_000 > this.now())
-    if (cached) return cached.value
+    const cached = this.tokens.get(key)
+    if (cached && cached.expiresAt - 30_000 > this.now()) return cached.value
     const running = this.exchanges.get(key)
     if (running) return running
     const generation = this.generations.get(subject) ?? 0

@@ -30,12 +30,9 @@ import { QqBindingRequiredError, QueryService } from './services/query-service'
 import { QueueService } from './services/queue-service'
 import { SettingService } from './services/setting-service'
 import {
-  createKoishiWahlapRequester,
   lxnsCallbackUrl,
   PublicCallbackUnavailableError,
-  UpdateFlowError,
   UpdateService,
-  WahlapRecordFetcher,
 } from './services/update-service'
 import type { Awaitable, LifecycleContext, LifecycleSteps, PluginContext } from './types'
 import { registerMaiServerRoutes } from './server/routes'
@@ -74,7 +71,6 @@ export * from './services/setting-service'
 export * from './services/update-service'
 export * from './server/callback-store'
 export * from './server/lxns-callback'
-export * from './server/proxy-config'
 export * from './server/routes'
 export * from './commands/calc'
 export * from './commands/core'
@@ -259,28 +255,11 @@ export async function createDefaultCommandDependencies(
     }
     throw error
   }
-  const wahlapRequest = createKoishiWahlapRequester(ctx.http, debug)
-  const wahlapFetcher = new WahlapRecordFetcher({ request: wahlapRequest })
   const updateService = new UpdateService({
     publicBaseUrl: runtime.publicBaseUrl,
     oauth: runtime.config.oauth,
     lxns: providers.lxns,
     divingFishOAuth,
-    async fetchAuthorizationRedirect() {
-      const response = await wahlapRequest(
-        'https://tgk-wcaime.wahlap.com/wc_auth/oauth/authorize/maimai-dx',
-        { redirect: 'manual' },
-      )
-      const location = Array.isArray(response.headers.location)
-        ? response.headers.location[0]
-        : response.headers.location
-      if (!location) throw new UpdateFlowError('授权服务器未返回重定向地址。')
-      return location
-    },
-    fetchDivingFishRecords: callbackUrl => wahlapFetcher.fetch(callbackUrl),
-    importDivingFishRecords: (userId, records) => (
-      providers.divingFish.importRecords(userId, records)
-    ),
     debug,
   })
 
@@ -370,22 +349,6 @@ export function createDefaultLifecycle(
     }
   }
 
-  const routeEndpoint = (publicUrl: string) => {
-    try {
-      const url = new URL(publicUrl)
-      if (!['http:', 'https:'].includes(url.protocol)) throw new Error('unsupported protocol')
-      return {
-        proxy: {
-          server: url.hostname,
-          port: url.port ? Number(url.port) : url.protocol === 'https:' ? 443 : 80,
-        },
-        allowedHost: url.hostname,
-      }
-    } catch {
-      return { proxy: { server: '', port: 0 }, allowedHost: 'tgk-wcaime.wahlap.com' }
-    }
-  }
-
   return {
     async verifyNativePackages() {
       await Promise.all([
@@ -418,11 +381,8 @@ export function createDefaultLifecycle(
       if (typeof server?.all !== 'function') return
       const commandDependencies = await ensureCommandDependencies(runtime)
       if (!commandDependencies?.updateService) return
-      const endpoint = routeEndpoint(runtime.publicBaseUrl)
       state.routeRegistration = registerMaiServerRoutes(ctx, {
         service: commandDependencies.updateService,
-        proxy: endpoint.proxy,
-        allowedWahlapHost: endpoint.allowedHost,
         lxnsCallbackPath: runtime.config.oauth.callbackPath,
       })
       if (runtime.config.oauth.enabled) {

@@ -35,7 +35,6 @@ export const DIVING_FISH_ENDPOINTS = {
   playerRecords: `${DIVING_FISH_BASE}/player/records`,
   musicData: `${DIVING_FISH_BASE}/music_data`,
   chartStats: `${DIVING_FISH_BASE}/chart_stats`,
-  updateRecords: `${DIVING_FISH_BASE}/player/update_records`,
 } as const
 
 export interface DivingFishMusicData {
@@ -74,24 +73,6 @@ export interface DivingFishChartStats {
     fc_dist: number[]
   }>
 }
-
-export interface DivingFishUpdateResponse {
-  creates: number
-  message: string
-  updates: number
-}
-
-export interface DivingFishRecordSimple {
-  title: string
-  achievements: number
-  dxScore: number
-  fc: '' | 'fc' | 'fcp' | 'ap' | 'app'
-  fs: '' | 'sync' | 'fs' | 'fsp' | 'fsd' | 'fsdp'
-  level_index: number
-  type: 'SD' | 'DX'
-}
-
-export type DivingFishImportRecord = DivingFishRecordSimple
 
 export interface DivingFishProviderOptions extends ProviderOptions {
   oauth: DivingFishOAuth
@@ -232,35 +213,6 @@ function parseChartStats(value: unknown): DivingFishChartStats {
   return value as unknown as DivingFishChartStats
 }
 
-function parseUpdateResponse(value: unknown): DivingFishUpdateResponse {
-  if (!isObject(value)
-    || !isSafeInteger(value.creates)
-    || typeof value.message !== 'string'
-    || !isSafeInteger(value.updates)) {
-    throw new ProviderMalformedPayloadError('diving-fish')
-  }
-  return value as unknown as DivingFishUpdateResponse
-}
-
-function validImportRecord(value: unknown): value is DivingFishImportRecord {
-  if (!isObject(value)) return false
-  return typeof value.title === 'string'
-    && value.title.length > 0
-    && isFiniteNumber(value.achievements)
-    && value.achievements >= 0
-    && value.achievements <= 101
-    && isSafeInteger(value.dxScore)
-    && value.dxScore >= 0
-    && typeof value.fc === 'string'
-    && ['', 'fc', 'fcp', 'ap', 'app'].includes(value.fc)
-    && typeof value.fs === 'string'
-    && ['', 'sync', 'fs', 'fsp', 'fsd', 'fsdp'].includes(value.fs)
-    && isSafeInteger(value.level_index)
-    && value.level_index >= 0
-    && value.level_index <= 4
-    && (value.type === 'SD' || value.type === 'DX')
-}
-
 export class DivingFishProvider implements MaimaiProvider {
   readonly id = 'diving-fish' as const
   readonly name = 'Diving Fish'
@@ -376,7 +328,7 @@ export class DivingFishProvider implements MaimaiProvider {
     throw error
   }
 
-  private async authorizedRequest(subject: OAuthSubject, scope: 'prober.records.read' | 'prober.records.write',
+  private async authorizedRequest(subject: OAuthSubject, scope: 'prober.records.read',
     method: 'GET' | 'POST', url: string, data?: unknown) {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       let token: string
@@ -452,19 +404,6 @@ export class DivingFishProvider implements MaimaiProvider {
     })
     this.assertSuccess(response.status, response.data)
     return parseChartStats(response.data)
-  }
-
-  async importRecords(userId: string, records: DivingFishImportRecord[]) {
-    if (!Array.isArray(records) || !records.every(validImportRecord)) {
-      throw new ProviderMalformedPayloadError(this.id, 'Diving Fish import records are malformed.')
-    }
-    const subject = await this.subject({ type: 'username', username: '', userId, isSelf: true })
-    return parseUpdateResponse(await this.authorizedRequest(subject, 'prober.records.write', 'POST',
-      DIVING_FISH_ENDPOINTS.updateRecords, records))
-  }
-
-  updateRecords(userId: string, records: DivingFishImportRecord[]) {
-    return this.importRecords(userId, records)
   }
 }
 

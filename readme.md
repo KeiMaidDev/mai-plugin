@@ -15,7 +15,7 @@
 - 查询曲目、谱面、别名、BPM、谱师、曲师、版本和拟合定数。
 - 支持每日推荐、歌曲试听、经典猜歌和舞萌开字母。
 - 支持群聊机厅排卡、机厅别名和排卡人数管理。
-- 支持落雪 OAuth 与水鱼账号设备码授权，并通过微信成绩抓取更新水鱼成绩。
+- 支持落雪 OAuth 与水鱼账号设备码授权。
 - QQ 平台支持原生 Markdown 和按钮，其他平台可回退到普通文本与图片。
 
 
@@ -46,7 +46,7 @@ mai-plugin
 - 填写应用名称（不超过 20 字）、应用描述（不超过 100 字）、主页地址（可留空，如填写须可公开访问）
 - 接入方式选择“Bot/工具”
 - 部署形态选择“由你自己部署运行”
-- 查询详细成绩需选择“读取你的舞萌 DX 成绩”（`prober.records.read`）；如需使用 `/mai 更新`，还需选择成绩写入权限（`prober.records.write`）
+- 权限选择“读取你在查分器的资料（Rating、姓名框等）”与“读取你的舞萌 DX 成绩”（`prober.records.read`）
 - 点击提交，耐心等待审核完成
 - 审核通过后，点击生成client_secret，clint_id在申请完成后仅会显示一次，请务必妥善保管
 - 将申请到的client_secret与client_id填入对应的配置中，即可完成水鱼查分器配置
@@ -102,7 +102,6 @@ mai-plugin
 | 图片设置 | `/mai 设置头像 <头像>`、`/mai 设置牌子 <牌子>` |
 | 猜歌 | `/mai 猜歌`、`/mai 舞萌开字母`、`/mai 启用猜歌`、`/mai 禁用猜歌` |
 | 排卡 | `/mai 排卡管理`、`/mai 几`、机厅别名加人数 |
-| 成绩更新 | `/mai 更新`、`/mai 导` |
 | 平台回退 | `/mai 兼容模式`、`/mai 关闭兼容模式` |
 
 查询自己但尚未绑定 QQ 时，插件会暂存原命令，并在绑定成功后自动继续查询。公开 B50 可按 QQ 或用户名查询；详细成绩要求目标玩家已授权本应用。QQ 查询若对应多个已授权账号，会要求澄清绑定。QQ 平台会提供相应的绑定按钮。
@@ -114,9 +113,6 @@ mai-plugin
 | 路由 | 用途 |
 | --- | --- |
 | `GET <oauth.callbackPath>` | 接收落雪 OAuth 回调。 |
-| `GET /mai-plugin/update?token=...` | 发起舞萌成绩更新授权跳转。 |
-| `GET /mai-plugin/proxy-config/:type` | 生成 `sing-box`、`throne`、`nekoray`、`nekobox` 或 `clash` 配置。 |
-| `GET /wc_auth/oauth/callback/maimai-dx` | 接收舞萌成绩更新回调。 |
 
 落雪 OAuth 的 redirect URI 为 `publicBaseUrl`（或 Koishi Server `selfUrl`）与 `oauth.callbackPath` 的组合。例如：
 
@@ -125,8 +121,6 @@ https://bot.example.com/mai-plugin/lxns/callback
 ```
 
 控制台登记的 redirect URI 必须与插件最终生成的地址完全一致。
-
-水鱼成绩更新需要部署者另行提供受控 HTTP 代理。本插件只生成客户端配置和处理回调，不实现通用 HTTP CONNECT 转发代理。不得暴露无认证的开放代理，并应限制目标域名、端口和访问来源。
 
 OAuth 凭据和令牌属于敏感信息。请勿在聊天记录、工单或截图中公开；`oauth.tokenCipherKey` 更换前应先迁移或清理已有落雪 OAuth Token。
 
@@ -147,8 +141,8 @@ mai-plugin/
 │  ├─ providers/         # 水鱼、落雪查分器及查询链
 │  ├─ query/             # 组合查询解析、过滤规则和执行器
 │  ├─ render/            # Takumi 渲染服务、节点和图片模板
-│  ├─ server/            # OAuth、成绩更新、代理配置和 HTTP 路由
-│  ├─ services/          # 查询、设置、别名、猜歌、排卡和更新业务
+│  ├─ server/            # OAuth 回调与 HTTP 路由
+│  ├─ services/          # 查询、设置、别名、猜歌、排卡和账号绑定业务
 │  ├─ utils/             # 字符串与并发控制工具
 │  ├─ config.ts          # 插件配置类型与 Schema
 │  ├─ constants.ts       # 插件名称、注入服务和生命周期常量
