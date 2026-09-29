@@ -15,6 +15,9 @@ export const MONITOR_CARRIER_SUFFIX_PATTERN = / \[上海[^\]]*代理\]$/u
 
 export type StatusHealth = 'normal' | 'degraded' | 'offline'
 
+/** The only monitor state that counts as healthy, as the status page numbers them. */
+export const HEALTHY_MONITOR_STATUS = 1
+
 export interface StatusMonitorView {
   id: number
   /** Display name, with the carrier annotation the group heading already states removed. */
@@ -106,7 +109,7 @@ function monitorView(monitor: { id: number, name: string }, heartbeats: Record<s
 }
 
 function isGroupHealthy(monitors: readonly StatusMonitorView[]) {
-  return monitors.length > 0 && monitors.every(monitor => monitor.status === 1)
+  return monitors.length > 0 && monitors.every(monitor => monitor.status === HEALTHY_MONITOR_STATUS)
 }
 
 function latestTime(payloads: StatusPagePayloads) {
