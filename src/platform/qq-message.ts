@@ -1,4 +1,5 @@
 import h from '@satorijs/element'
+import { isRichTextPlatform } from '../constants'
 import {
   sanitizeFallbackMessage,
   type FallbackElement,
@@ -394,7 +395,7 @@ export async function sendReply(
 ) {
   const fallbackElements = sanitizeFallbackMessage(fallback)
     .map(createFallbackElement)
-  const useRich = session.platform === 'qq'
+  const useRich = isRichTextPlatform(session.platform)
     && !options.compatibilityMode
     && rich !== undefined
   if (!useRich) return session.send(fallbackElements)

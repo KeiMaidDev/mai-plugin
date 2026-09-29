@@ -1,3 +1,4 @@
+import { isRichTextPlatform } from '../constants'
 import {
   findCancellationError,
   ProviderBindingRequiredError,
@@ -166,7 +167,7 @@ export interface ReplyPayloadOptions<RichPayload> {
 export function selectReplyPayload<RichPayload>(
   options: ReplyPayloadOptions<RichPayload>,
 ): FallbackMessage | RichPayload {
-  if (options.platform !== 'qq' || options.compatibilityMode || options.rich === undefined) {
+  if (!isRichTextPlatform(options.platform) || options.compatibilityMode || options.rich === undefined) {
     return sanitizeFallbackMessage(options.fallback)
   }
   return options.rich

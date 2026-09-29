@@ -1,4 +1,5 @@
 import h from '@satorijs/element'
+import { isRichTextPlatform } from '../constants'
 import type {
   GuessCoverImage,
   GuessKeyboardKind,
@@ -161,7 +162,7 @@ async function sendSongCard(
   compatibilityMode: boolean,
 ) {
   const keyboard = guessKeyboard(reply.keyboard)
-  if (session.platform === 'qq' && !compatibilityMode && options.assets) {
+  if (isRichTextPlatform(session.platform) && !compatibilityMode && options.assets) {
     try {
       const card = await createQqMarkdownImage({
         image: reply.crop ?? reply.cover.data,

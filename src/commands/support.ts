@@ -1,6 +1,7 @@
 import h from '@satorijs/element'
 import type { Command, Context, Fragment, Session } from 'koishi'
 import type { CourseInfo, IconInfo, PlateInfo } from '../data/normalizers'
+import { isRichTextPlatform } from '../constants'
 import type { BindRepository, SettingRepository } from '../database/repositories'
 import type { MusicInfo } from '../domain/music'
 import {
@@ -99,7 +100,6 @@ export interface CoreCommandDependencies {
   random?: () => number
   previewAudio?: (music: MusicInfo) => Awaitable<Buffer | Uint8Array | null>
   replayCommand?: (session: Session, command: string) => Awaitable<void>
-  compatibilityPlatforms?: readonly string[]
   regexWorkerSemaphore?: Semaphore
 }
 
@@ -357,7 +357,7 @@ export async function replyImage(
   rich?: h,
 ) {
   const compatibilityMode = await compatibilityModeFor(session, dependencies)
-  if (session.platform === 'qq' && !compatibilityMode && rich) {
+  if (isRichTextPlatform(session.platform) && !compatibilityMode && rich) {
     await session.send([h.image(Buffer.from(image), 'image/png'), rich])
     return
   }
@@ -379,7 +379,7 @@ export async function replyMarkdownImage(
     { type: 'image', data: image, mimeType: 'image/png' },
     ...(caption.length ? [{ type: 'text' as const, text: caption.join('\n') }] : []),
   ]
-  if (session.platform !== 'qq' || compatibilityMode || !dependencies.assetTransformer) {
+  if (!isRichTextPlatform(session.platform) || compatibilityMode || !dependencies.assetTransformer) {
     await sendReply(session, fallback, undefined, { compatibilityMode })
     return
   }

@@ -3,6 +3,7 @@ import h from '@satorijs/element'
 import { readFile } from 'node:fs/promises'
 import { extname } from 'node:path'
 import { Worker } from 'node:worker_threads'
+import { isRichTextPlatform } from '../constants'
 import { MusicDifficulty } from '../domain/enums'
 import type { ChartInfo, MusicInfo } from '../domain/music'
 import { isAdministrator } from '../platform/admin'
@@ -292,7 +293,7 @@ async function replyMusicDetails(
 ) {
   const text = chart ? formatChartText(chart) : formatMusicText(music)
   const compatibilityMode = await compatibilityModeFor(session, dependencies)
-  const useQqMarkdown = session.platform === 'qq' && !compatibilityMode
+  const useQqMarkdown = isRichTextPlatform(session.platform) && !compatibilityMode
   const coverUrl = useQqMarkdown ? await mappedCoverUrl(dependencies, music) : null
   const cover = !useQqMarkdown || !coverUrl ? await loadCover(dependencies, music) : null
   const fallback = [
