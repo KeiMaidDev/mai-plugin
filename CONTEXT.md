@@ -50,19 +50,22 @@ The message presenting one guess image — a cover hint or a revealed song — u
 The buttons attached to a guess message, which either fill the client's input box or run a guessing command.
 
 **Server status**:
-The current availability of the Maimai DX game servers, as reported by the community status page.
+The current availability of the Maimai DX game servers, as reported by the community status service isMaiDown.
 
-**Line group**:
-A group of monitored services that share one carrier route to the game servers. The CMCC, CT, and CU groups are Line groups; the overview and community-service groups are not.
+**Service**:
+One monitored endpoint that a Server status report covers, with its own state, its own latency, and how long that state has lasted. A Status bulletin shows one row per Service.
 
 **Health verdict**:
-The single conclusion a Status bulletin states about whether the game servers are reachable: normal, partially degraded, or fully offline.
+The one-word conclusion a Server status report states about whether the game servers are usable: normal, recovering, degraded, maintenance, outage, or no data. The status source states it; the plugin only presents it.
+
+**Broadcast**:
+A message the status source publishes alongside its report for players to read, such as a known outage. A Status bulletin shows it as a quote line when there is one.
 
 **Status bulletin**:
-The reply that reports Server status: its Health verdict, the Banner, one table per group, any active announcement or planned maintenance, and the time of the newest reported heartbeat. It has two forms of the same content — native Markdown on a rich-text platform, and plain text with the Banner as an ordinary image element everywhere else.
+The reply that reports Server status: its Health verdict, the Banner, one row per Service, any Broadcast, the source's own report time, and the attribution line. It has two forms — native Markdown on a rich-text platform, and plain text with the Banner as an ordinary image element everywhere else.
 
 **Banner**:
-The status artwork a Status bulletin carries for its Health verdict: the green artwork when every Line group is healthy, the amber one when only some are, and the gray one when none is.
+The status artwork a Status bulletin carries for its Health verdict: the green artwork when the source reports the servers usable, the amber one when they are degraded or under maintenance, and the gray one when they are down or reporting nothing. The two verdicts that share the gray artwork are told apart by their wording, not by the image.
 
 **Refresh button**:
 The button a Status bulletin offers on a rich-text platform so that a player can ask for Server status again without retyping the command. It has no counterpart in the plain-text form.

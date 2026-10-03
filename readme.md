@@ -16,6 +16,7 @@
 - 支持每日推荐、歌曲试听、经典猜歌和舞萌开字母。
 - 支持群聊机厅排卡、机厅别名和排卡人数管理。
 - 支持落雪 OAuth 与水鱼账号设备码授权。
+- 通过 isMaiDown 播报舞萌 DX 服务器状态。
 - QQ 平台支持原生 Markdown 和按钮，其他平台可回退到普通文本与图片。
 - 查分结果按可怜BOT的样式显示：图片上方为“查询结果”，下方为生成时间，图片内标题使用中文查分器名称。
 
@@ -131,23 +132,25 @@ OAuth 凭据和令牌属于敏感信息。请勿在聊天记录、工单或截�
 
 ## 服务器状态
 
-`/mai 状态` 与 `/mai 有网吗` 会读取[舞萌社区状态页](https://status.awmc.cc/status/maimai)，先归纳出一条结论，再给出 CMCC / CT / CU 三条线路与其他展示分组的明细。
+`/mai 状态` 与 `/mai 有网吗` 读取 [isMaiDown](https://mai.chongxi.us/) 的 `/api/bot` 接口，直接采用它给出的结论，再列出服务明细。
 
-结论只看三条线路组，社区服务组只展示不参与判定：
+结论就是接口的 `verdict` 字段，插件只负责展示，因此播报与网页上看到的不会互相矛盾：
 
-- **移动线路正常** —— 每个线路组都至少有一个监控项，且每项最新的心跳都是「正常」。
-- **部分线路异常** —— 至少一个线路组正常，同时至少一个不正常。
-- **移动线路全部离线** —— 没有任何线路组正常。
+- **✅ 一切正常**（`normal`）与 **🔄 性能恢复中**（`recovering`）
+- **⚠️ 部分服务性能下降**（`degraded`）与 **🛠️ 服务器维护中**（`maintenance`）
+- **❌ 部分服务宕机**（`outage`）与 **❔ 暂无数据**（`nodata`）
 
-公告与计划维护不会改变结论，但会出现在播报里。状态页自带的 `Overall / 总览` 分组会被跳过，因为它只是下面各组的汇总，还包含一个 `[测试]` 探针。
+接口出现插件不认识的结论值时，播报会退回它自己给的 `verdict_text`，所以上游新增状态不会读成插件出错。
 
-QQ 群聊、私聊与频道收到原生 Markdown 播报：`##` 结论标题、横幅图、每组一张四列表（服务器 / 状态 / 延迟 / 24h）、公告与计划维护引用行，以及最新心跳的时间。24h 列只在异常行写一位小数百分比，正常行写 `-`，让正常的播报保持窄。其他平台与兼容模式收到同样的内容，只是横幅图作为普通图片元素、正文作为纯文本，异常行把 24h 写成 `，24h <n>%`。频道里的富文本目前会被适配器丢弃，见「运行要求」。
+明细为六个服务各一行（服务器 / 状态 / 延迟 / 备注）：状态用上游的 `state_text`，延迟为 `<n>ms` 或 `未知`，备注只在服务处于异常状态时写它已持续多久。
 
-播报里的心跳永远按时间取最新的一条，而不是按数组位置，因此不会出现「状态是几小时前的，时间戳却是当前」的错位。状态页返回的数据缺少线路组、格式不符或请求失败时，会回复一句中性说明，并保持与其他功能一致的回退文案。
+QQ 群聊、私聊与频道收到原生 Markdown 播报：`##` 结论标题（状态图贴在标题行行首、占掉原来的结论表情位置，图片的 alt 就是那个表情）、服务表格、接口的公告引用行，以及同样以引用样式显示的更新时间与来源行 —— 表格已经写清每个服务的状态、延迟与持续时间，面板里不再另起一段重复。其他平台与兼容模式收到同样的结论、表格、公告与来源行，状态图作为普通图片元素排在纯文本之前，表格摊成每个服务一行，页脚不带引用符号。频道里的富文本目前会被适配器丢弃，见「运行要求」。
 
-状态页每 20 秒上报一次，因此响应默认缓存 30 秒；`status.cacheTtlMs` 设为 `0` 可关闭缓存。`status.enabled` 关闭后不注册任何相关指令。
+播报只展示接口给的数据，不再自行归纳结论，也不再有线路分组：接口按服务上报，不按运营商线路。接口请求失败、超时或返回的数据缺少 `verdict` / `services` 时，会回复一句点名上游的中性说明，以便区分「上游挂了」和「机器人坏了」。
 
-横幅图放在 `assets/generated/`：`status-normal.png`（正常）与 `status-offline.png`（离线）来自原插件，`status-degraded.png`（异常）为本插件按同一风格新增。图片经 Koishi assets 服务上传，并以 `#96px #96px` 声明展示尺寸，让两张原生尺寸不同的原图渲染成同一大小；上传失败时改用无 Markdown 语法的纯文本播报，横幅图仍作为普通图片元素发送，整条回复不会失败。
+上游按需上报，因此响应默认缓存 30 秒；`status.cacheTtlMs` 设为 `0` 可关闭缓存。`status.enabled` 关闭后不注册任何相关指令，`status.apiBaseUrl` 可改到镜像地址。
+
+横幅图放在 `assets/generated/`：`status-normal.png`（正常、恢复中）、`status-degraded.png`（性能下降、维护中）、`status-offline.png`（宕机、暂无数据）来自原插件与既有素材，六个结论共用三张图。原图只有 33px 宽（`status-offline.png` 为 37×35），Markdown 面板把它上传后以 `#33px #33px` 声明、贴在标题行行首，按原图像素渲染、不放大，所以不发糊；非富文本平台与兼容模式把它作为普通图片元素、按原尺寸排在纯文本之前。上传失败时改用无 Markdown 语法的纯文本播报，整条回复不会失败。
 
 ## 项目结构
 
@@ -192,7 +195,9 @@ yarn clone https://github.com/KeiMaidDev/koishi-plugin-mai-plugin
 
 MIT
 
-服务器状态功能移植自 [koishi-plugin-maimai-status](https://github.com/ShiraiKuroko003/koishi-plugin-maimai-status)，原作者 ShiraiKuroko003，以 MIT 许可发布。`assets/generated/status-normal.png` 与 `assets/generated/status-offline.png` 直接取自该项目，`status-degraded.png` 由 `status-normal.png` 改色而来。以下是原项目的许可声明：
+服务器状态功能的数据来自 [isMaiDown](https://mai.chongxi.us/)，请按该站要求注明：数据来源于 isMaiDown by Chongxi。
+
+功能最初的形态移植自 [koishi-plugin-maimai-status](https://github.com/ShiraiKuroko003/koishi-plugin-maimai-status)，原作者 ShiraiKuroko003，以 MIT 许可发布。数据来源已改为 isMaiDown，仅保留该项目提供的横幅图：`assets/generated/status-normal.png` 与 `assets/generated/status-offline.png` 直接取自该项目，`status-degraded.png` 由 `status-normal.png` 改色而来。以下是原项目的许可声明：
 
 ```text
 MIT License

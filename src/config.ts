@@ -1,8 +1,7 @@
 import Schema from 'schemastery'
 import {
   DEFAULT_RATING_FOOTER_TEXT,
-  DEFAULT_STATUS_PAGE_BASE_URL,
-  DEFAULT_STATUS_VERDICT_GROUPS,
+  DEFAULT_STATUS_SOURCE_BASE_URL,
 } from './constants'
 import {
   DEFAULT_LXNS_CALLBACK_PATH,
@@ -17,7 +16,6 @@ export interface Config {
     enabled: boolean
     timeoutMs: number
     apiBaseUrl: string
-    verdictGroups: string[]
     cacheTtlMs: number
   }
   divingFishOAuth: {
@@ -102,13 +100,11 @@ export const ConfigSchema: Schema<Config> = Schema.object({
     enabled: Schema.boolean().default(true)
       .description('是否注册服务器状态播报指令；关闭时不注册任何相关指令'),
     timeoutMs: Schema.natural().min(1_000).max(120_000).default(5_000)
-      .description('状态页请求的超时时间，单位为毫秒'),
-    apiBaseUrl: Schema.string().default(DEFAULT_STATUS_PAGE_BASE_URL)
-      .description('状态页的基础 URL'),
-    verdictGroups: Schema.array(Schema.string()).default([...DEFAULT_STATUS_VERDICT_GROUPS])
-      .description('参与健康结论判定的线路组，按正则字符串匹配分组名；社区服务组只展示不判定'),
+      .description('状态查询请求的超时时间，单位为毫秒'),
+    apiBaseUrl: Schema.string().default(DEFAULT_STATUS_SOURCE_BASE_URL)
+      .description('isMaiDown 状态服务的基础 URL；播报结论与明细都读取该服务的 /api/bot 接口'),
     cacheTtlMs: Schema.natural().max(600_000).default(30_000)
-      .description('状态页响应的缓存时间，单位为毫秒；为 0 时不缓存'),
+      .description('状态响应的缓存时间，单位为毫秒；为 0 时不缓存'),
   }).description('服务器状态播报'),
   ratingFooterText: Schema.string().default(DEFAULT_RATING_FOOTER_TEXT)
     .description('图片渲染共用的底部文字；留空仅显示底栏。'),

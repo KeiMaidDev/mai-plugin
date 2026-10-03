@@ -1,129 +1,96 @@
-import {
-  newestHeartbeat,
-  type StatusHeartbeat,
-  type StatusPagePayloads,
-} from '../providers/status-page'
+import type { StatusSourceDocument } from '../providers/status-source'
 
-/** The overview group aggregates the groups below it and carries a `[测试]` probe. */
-export const OVERVIEW_GROUP_NAME = 'Overall / 总览'
+export type StatusVerdict = string
 
-/** Shared prefix of every line-group name; the community-service group has none. */
-export const LINE_GROUP_NAME_PREFIX = '舞萌DX 核心游戏服务器 - '
-
-/** Trailing carrier annotation a line-group monitor carries; community monitors do not. */
-export const MONITOR_CARRIER_SUFFIX_PATTERN = / \[上海[^\]]*代理\]$/u
-
-export type StatusHealth = 'normal' | 'degraded' | 'offline'
-
-/** The only monitor state that counts as healthy, as the status page numbers them. */
-export const HEALTHY_MONITOR_STATUS = 1
-
-export interface StatusMonitorView {
-  id: number
-  /** Display name, with the carrier annotation the group heading already states removed. */
+export interface StatusServiceView {
+  key: string
+  /** Display name; falls back to the source's own key when it reports no name. */
   name: string
-  /** Newest heartbeat's `status`, or null when the monitor reports no heartbeat. */
-  status: number | null
-  ping: number | null
-  /** 24-hour availability in `0..1`, or null when the status page reports none. */
-  uptime: number | null
-}
-
-export interface StatusGroupView {
-  /** Display name, with the shared line prefix removed. */
-  name: string
-  /** Whether this group is a line group, and therefore decides the verdict. */
-  line: boolean
-  healthy: boolean
-  monitors: StatusMonitorView[]
+  /** The source's machine state, empty when it reports none. */
+  state: string
+  /** The source's own Chinese label, empty when it reports none. */
+  stateText: string
+  /** Milliseconds, or null when the source reports none. */
+  latency: number | null
+  /** How long the state has lasted, empty on a service the source calls fine. */
+  durationText: string
 }
 
 export interface StatusSnapshot {
-  health: StatusHealth
-  groups: StatusGroupView[]
-  incidents: string[]
-  maintenance: string[]
-  /** Newest heartbeat time across every monitor, or null when none reports one. */
+  /** The source's own verdict key; unknown keys still reach the presenter. */
+  verdict: StatusVerdict
+  /** The source's verdict sentence, used only when the key is one we cannot name. */
+  verdictText: string
+  services: StatusServiceView[]
+  /** The source's broadcast message, empty when it has none. */
+  broadcast: string
+  /** The source's own report time, or null when it reports none we can read. */
   updatedAt: Date | null
 }
 
-export interface StatusPageSource {
-  fetch(): Promise<StatusPagePayloads>
+export interface StatusSource {
+  fetch(): Promise<StatusSourceDocument>
 }
 
 export interface StatusServiceOptions {
-  source: StatusPageSource
-  verdictGroups: readonly string[]
+  source: StatusSource
   cacheTtlMs: number
   now?: () => Date
 }
 
-/** Raised when the response carries no line group, so no verdict can be stated. */
-export class StatusPageEmptyError extends Error {
-  constructor(message = 'The status page returned no line group.') {
+/** Raised when the source answers without a single service to show. */
+export class StatusSourceEmptyError extends Error {
+  constructor(message = 'The status source returned no service.') {
     super(message)
-    this.name = 'StatusPageEmptyError'
+    this.name = 'StatusSourceEmptyError'
   }
 }
 
 interface StatusCacheEntry {
-  payloads: StatusPagePayloads
+  document: StatusSourceDocument
   fetchedAt: number
 }
 
-/** `time` is UTC without a zone marker, so the `Z` suffix is added before parsing. */
-export function parseStatusPageTime(value: string) {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** A trimmed string, or an empty one when the field is absent or not a string. */
+function optionalText(value: unknown) {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+/** A finite number, or null. `NaN` and infinities are not measurements. */
+function optionalNumber(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+/**
+ * The source documents `timestamp` as ISO 8601 with an offset, so unlike the
+ * probe pages this replaced it needs no zone marker appended. An unreadable
+ * value is reported as unknown rather than guessed at.
+ */
+export function parseStatusTime(value: string | undefined) {
   if (!value) return null
-  const normalized = value.endsWith('Z') ? value : `${value.replace(' ', 'T')}Z`
-  const date = new Date(normalized)
+  const date = new Date(value)
   return Number.isNaN(date.getTime()) ? null : date
 }
 
-export function monitorDisplayName(name: string) {
-  return name.replace(MONITOR_CARRIER_SUFFIX_PATTERN, '')
-}
-
-export function groupDisplayName(name: string) {
-  return name.startsWith(LINE_GROUP_NAME_PREFIX)
-    ? name.slice(LINE_GROUP_NAME_PREFIX.length)
-    : name
-}
-
-function noticeTitles(notices: { title?: string, active?: boolean }[] | undefined) {
-  return (notices ?? [])
-    .filter(notice => notice?.active === true)
-    .map(notice => (typeof notice.title === 'string' ? notice.title.trim() : ''))
-    .filter(title => title.length > 0)
-}
-
-function monitorView(monitor: { id: number, name: string }, heartbeats: Record<string, StatusHeartbeat[]> | undefined, uptimes: Record<string, number> | undefined): StatusMonitorView {
-  const heartbeat = newestHeartbeat(heartbeats?.[String(monitor.id)])
-  const uptime = uptimes?.[`${monitor.id}_24`]
+function serviceView(entry: unknown): StatusServiceView | null {
+  if (!isRecord(entry)) return null
+  const key = optionalText(entry.key)
+  const name = optionalText(entry.name)
+  // A service with neither a name nor a key cannot be labelled, so showing it
+  // would put an anonymous row in the table.
+  if (!name && !key) return null
   return {
-    id: monitor.id,
-    name: monitorDisplayName(monitor.name),
-    status: typeof heartbeat?.status === 'number' ? heartbeat.status : null,
-    ping: typeof heartbeat?.ping === 'number' ? heartbeat.ping : null,
-    uptime: typeof uptime === 'number' ? uptime : null,
+    key,
+    name: name || key.toUpperCase(),
+    state: optionalText(entry.state),
+    stateText: optionalText(entry.state_text),
+    latency: optionalNumber(entry.latency),
+    durationText: optionalText(entry.duration_text),
   }
-}
-
-function isGroupHealthy(monitors: readonly StatusMonitorView[]) {
-  return monitors.length > 0 && monitors.every(monitor => monitor.status === HEALTHY_MONITOR_STATUS)
-}
-
-function latestTime(payloads: StatusPagePayloads) {
-  let newest = ''
-  for (const heartbeats of Object.values(payloads.heartbeat.heartbeatList ?? {})) {
-    for (const heartbeat of heartbeats ?? []) {
-      if (typeof heartbeat?.time === 'string' && heartbeat.time > newest) newest = heartbeat.time
-    }
-  }
-  return newest
-}
-
-function matchesVerdictGroup(name: string, patterns: readonly RegExp[]) {
-  return patterns.some(pattern => pattern.test(name))
 }
 
 export class StatusService {
@@ -135,63 +102,42 @@ export class StatusService {
     return this.options.now?.() ?? new Date()
   }
 
-  private verdictPatterns() {
-    return this.options.verdictGroups
-      .map(source => source.trim())
-      .filter(source => source.length > 0)
-      .map(source => new RegExp(source))
-  }
-
   /**
-   * The cache holds the two raw payloads and re-derives the snapshot on a hit,
-   * so changing the bulletin or the verdict rule never needs a cache flush.
+   * The cache holds the raw document and re-derives the snapshot on a hit, so
+   * changing the labels or the bulletin layout never needs a cache flush.
    */
-  private async payloads(): Promise<StatusPagePayloads> {
+  private async document(): Promise<StatusSourceDocument> {
     if (this.options.cacheTtlMs > 0 && this.cache) {
       const age = this.now().getTime() - this.cache.fetchedAt
-      if (age < this.options.cacheTtlMs) return this.cache.payloads
+      if (age < this.options.cacheTtlMs) return this.cache.document
     }
-    const payloads = await this.options.source.fetch()
+    const document = await this.options.source.fetch()
     this.cache = this.options.cacheTtlMs > 0
-      ? { payloads, fetchedAt: this.now().getTime() }
+      ? { document, fetchedAt: this.now().getTime() }
       : null
-    return payloads
+    return document
   }
 
   async snapshot(): Promise<StatusSnapshot> {
-    return this.derive(await this.payloads())
+    return this.derive(await this.document())
   }
 
-  private derive(payloads: StatusPagePayloads): StatusSnapshot {
-    const patterns = this.verdictPatterns()
-    const { heartbeatList, uptimeList } = payloads.heartbeat
-    const groups: StatusGroupView[] = []
-    for (const group of payloads.page.publicGroupList ?? []) {
-      if (!group || group.name === OVERVIEW_GROUP_NAME) continue
-      const monitors = (group.monitorList ?? [])
-        .filter(monitor => Boolean(monitor))
-        .map(monitor => monitorView(monitor, heartbeatList, uptimeList))
-      groups.push({
-        name: groupDisplayName(group.name),
-        line: matchesVerdictGroup(group.name, patterns),
-        healthy: isGroupHealthy(monitors),
-        monitors,
-      })
+  private derive(document: StatusSourceDocument): StatusSnapshot {
+    const services: StatusServiceView[] = []
+    for (const entry of document.services) {
+      const view = serviceView(entry)
+      if (view) services.push(view)
     }
-
-    const lineGroups = groups.filter(group => group.line)
-    if (lineGroups.length === 0) throw new StatusPageEmptyError()
-    const healthyLines = lineGroups.filter(group => group.healthy).length
-    const health: StatusHealth = healthyLines === lineGroups.length
-      ? 'normal'
-      : healthyLines === 0 ? 'offline' : 'degraded'
+    // The verdict the source states is the whole answer; with nothing to show
+    // under it, the reply would be a heading over an empty table.
+    if (services.length === 0) throw new StatusSourceEmptyError()
 
     return {
-      health,
-      groups,
-      incidents: noticeTitles(payloads.page.incidents),
-      maintenance: noticeTitles(payloads.page.maintenanceList),
-      updatedAt: parseStatusPageTime(latestTime(payloads)),
+      verdict: document.verdict.trim(),
+      verdictText: optionalText(document.verdict_text),
+      services,
+      broadcast: isRecord(document.broadcast) ? optionalText(document.broadcast.msg) : '',
+      updatedAt: parseStatusTime(document.timestamp),
     }
   }
 }

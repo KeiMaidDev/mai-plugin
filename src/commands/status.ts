@@ -22,9 +22,9 @@ import {
   type StatusBannerLoader,
 } from '../platform/status-message'
 import { findCancellationError } from '../providers/errors'
-import { StatusPageError } from '../providers/status-page'
+import { StatusSourceError } from '../providers/status-source'
 import {
-  StatusPageEmptyError,
+  StatusSourceEmptyError,
   type StatusService,
   type StatusSnapshot,
 } from '../services/status-service'
@@ -79,7 +79,9 @@ export async function replyStatusBulletin(
   const text = formatStatusText(snapshot)
   let banner: Buffer | null = null
   try {
-    banner = dependencies.loadStatusBanner ? await dependencies.loadStatusBanner(snapshot.health) : null
+    banner = dependencies.loadStatusBanner
+      ? await dependencies.loadStatusBanner(snapshot.verdict)
+      : null
   } catch {
     banner = null
   }
@@ -120,10 +122,10 @@ export function registerStatusCommands(
         } catch (error) {
           const cancellation = findCancellationError(error)
           if (cancellation) throw cancellation
-          // A status-page failure is already logged by the data source with the
+          // A status-source failure is already logged by the data source with the
           // failing request and its kind; anything else is a surprise worth logging.
-          if (!(error instanceof StatusPageError) && !(error instanceof StatusPageEmptyError)) {
-            ctx.logger(PLUGIN_NAME).warn(`[mai-plugin] status page request failed: ${String(error)}`)
+          if (!(error instanceof StatusSourceError) && !(error instanceof StatusSourceEmptyError)) {
+            ctx.logger(PLUGIN_NAME).warn(`[mai-plugin] status source request failed: ${String(error)}`)
           }
           await replyText(session, dependencies, mapStatusError(error))
         }

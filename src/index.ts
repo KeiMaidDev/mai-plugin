@@ -16,7 +16,7 @@ import { DivingFishProvider } from './providers/diving-fish'
 import { DivingFishOAuth } from './providers/diving-fish-oauth'
 import { LxnsProvider } from './providers/lxns'
 import { ProviderChain } from './providers/provider-chain'
-import { StatusPageProvider } from './providers/status-page'
+import { StatusSourceProvider } from './providers/status-source'
 import { createGuessPresenter } from './platform/guess-message'
 import { statusBannerAsset } from './platform/status-message'
 import { resolvePackageAssetPath } from './render/assets'
@@ -63,7 +63,7 @@ export * from './providers/errors'
 export * from './providers/diving-fish'
 export * from './providers/lxns'
 export * from './providers/provider-chain'
-export * from './providers/status-page'
+export * from './providers/status-source'
 export * from './query/filter-types'
 export * from './query/combo-parser'
 export * from './query/combo-rules'
@@ -285,13 +285,12 @@ export async function createDefaultCommandDependencies(
     debug,
   })
   const statusService = new StatusService({
-    source: new StatusPageProvider({
+    source: new StatusSourceProvider({
       http: ctx.http,
       baseUrl: runtime.config.status.apiBaseUrl,
       timeoutMs: runtime.config.status.timeoutMs,
       logger,
     }),
-    verdictGroups: runtime.config.status.verdictGroups,
     cacheTtlMs: runtime.config.status.cacheTtlMs,
     now,
   })
@@ -306,7 +305,7 @@ export async function createDefaultCommandDependencies(
     updateService,
     statusService,
     statusEnabled: runtime.config.status.enabled,
-    loadStatusBanner: health => readFile(resolvePackageAssetPath(statusBannerAsset(health))),
+    loadStatusBanner: verdict => readFile(resolvePackageAssetPath(statusBannerAsset(verdict))),
     guessService,
     settingRepository: repositories.setting,
     renderer: new TakumiMaiRenderer(services.renderer, data, runtime.config.ratingFooterText),
