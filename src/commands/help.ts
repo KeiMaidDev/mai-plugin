@@ -58,8 +58,8 @@ export function registerHelpCommand(
           },
           {
             id: 'help-game',
-            label: '🎮猜歌',
-            command: '/mai 猜歌',
+            label: '🌐有网吗',
+            command: '/mai 有网吗',
             enter:true,
             reply: false,
           },
