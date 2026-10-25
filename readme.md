@@ -1,6 +1,6 @@
 # koishi-plugin-mai-plugin
 
-[![npm](https://img.shields.io/npm/v/koishi-plugin-mai-plugin?style=flat-square)](https://www.npmjs.com/package/koishi-plugin-mai-plugin)
+[![npm](https://img.shields.io/npm/v/koishi-plugin-mai-plugin?style=flat-square)](https://www.npmjs.com/package/koishi-plugin-mai-plugin) [![npm downloads](https://img.shields.io/npm/dm/koishi-plugin-mai-plugin)](https://www.npmjs.com/package/koishi-plugin-mai-plugin)
 
 > [!NOTE]
 > 本项目由各种AI工具开发，存在一定的问题，见谅，如有更好的实现欢迎 PR<br>
@@ -16,7 +16,7 @@
 - 支持每日推荐、歌曲试听、经典猜歌和舞萌开字母。
 - 支持群聊机厅排卡、机厅别名和排卡人数管理。
 - 支持落雪 OAuth 与水鱼账号设备码授权。
-- 通过 isMaiDown 播报舞萌 DX 服务器状态。
+- 通过 isMaiDown 播报舞萌 DX 服务器状态，服务器状态功能的数据来自 [isMaiDown](https://mai.chongxi.us/)
 - QQ 平台支持原生 Markdown 和按钮，其他平台可回退到普通文本与图片。
 - 查分结果按可怜BOT的样式显示：图片上方为“查询结果”，下方为生成时间，图片内标题使用中文查分器名称。
 
@@ -194,31 +194,3 @@ yarn clone https://github.com/KeiMaidDev/koishi-plugin-mai-plugin
 ## 许可证
 
 MIT
-
-服务器状态功能的数据来自 [isMaiDown](https://mai.chongxi.us/)，请按该站要求注明：数据来源于 isMaiDown by Chongxi。
-
-功能最初的形态移植自 [koishi-plugin-maimai-status](https://github.com/ShiraiKuroko003/koishi-plugin-maimai-status)，原作者 ShiraiKuroko003，以 MIT 许可发布。数据来源已改为 isMaiDown，仅保留该项目提供的横幅图：`assets/generated/status-normal.png` 与 `assets/generated/status-offline.png` 直接取自该项目，`status-degraded.png` 由 `status-normal.png` 改色而来。以下是原项目的许可声明：
-
-```text
-MIT License
-
-Copyright (c) 2026 ShiraiKuroko003
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-```
