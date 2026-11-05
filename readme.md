@@ -40,9 +40,6 @@ mai-plugin
 - 可用的 Koishi HTTP 服务，用于访问水鱼、落雪和静态资源源。
 - QQ 原生 Markdown 和按钮使用 [adapter-qq-crack](https://github.com/koishi-shangxue-plugins/koishi-plugin-adapter-qq-crack) 独有语法；不支持时可启用兼容模式。
 
-> [!WARNING]
-> QQ 频道里的富文本回复目前会被静默丢弃。`adapter-qq-crack` 的频道编码器不认识本插件使用的 `qq:` 元素，会把元素渲染成空串，消息随后因内容为空被直接丢弃 —— 不报错，也没有任何提示。受影响的不只是服务器状态播报，评分结果图、猜歌卡片和普通文本回复都在内。原因在适配器一侧：插件已把 QQ 频道与群聊、私聊纳入同一条原生 Markdown 路径，适配器作者后续完成适配即可恢复。在此之前，频道里可以先开启兼容模式（`/mai 兼容模式`）以纯文本与图片收发。
-
 需要使用落雪 OAuth 时，请先配置 Koishi Server 的 `selfUrl`，或设置插件的 `publicBaseUrl`。
 
 水鱼 Oauth 申请指南：
