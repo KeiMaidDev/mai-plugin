@@ -40,9 +40,9 @@
   "dependencies": {
     "@guswpm/damerau-levenshtein": "1.2.1",
     "@satorijs/element": "^3.2.0",
-    "@takumi-rs/helpers": "2.1.1",
-    "@takumi-rs/wasm": "2.1.1",
-    "image-size": "2.0.2",
+    "@takumi-rs/helpers": "2.19.0",
+    "@takumi-rs/wasm": "2.19.0",
+    "image-size": "2.0.4",
     "opencc-js": "1.4.1",
     "schemastery": "^3.18.0"
   },
