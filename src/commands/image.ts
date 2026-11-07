@@ -16,6 +16,7 @@ import { parseComboQuery } from '../query/combo-parser'
 import type { ComboFilter } from '../query/filter-types'
 import {
   commandAction,
+  createQqCommandGuidance,
   renderTimed,
   replyQueryError,
   replyQueryResultImage,
@@ -562,6 +563,17 @@ export function registerImageCommands(
     .alias('mai.紫谱成绩', { options: { difficulty: '紫谱' } })
     .alias('mai.白谱成绩', { options: { difficulty: '白谱' } })
     .action(commandAction(async ({ session, options }, query) => {
+      if (!query?.trim()) {
+        const text = '请填写要查询的歌曲（名称/别名/ID）。'
+        await replyText(session, dependencies, text, createQqCommandGuidance(text, [[{
+          id: 'song-score-input',
+          label: '填写歌曲',
+          command: '/mai info',
+          enter: false,
+          reply: false,
+        }]]))
+        return
+      }
       const music = await songByAlias(dependencies, query)
       if (!music) {
         await replyText(session, dependencies, '未找到该歌曲。')
