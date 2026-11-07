@@ -2,7 +2,7 @@ import type { Context } from 'koishi'
 import type { CoreCommandDependencies } from './support'
 import { commandAction, createQqCommandGuidance, replyText } from './support'
 
-const COMBO_DOCS_URL = 'http://docs.lowr.ink/docs/instruction/maimai/combo'
+const COMBO_DOCS_URL = 'https://docs.lowr.ink/docs/instruction/maimai/combo'
 
 const HELP_TEXT = [
   '## 舞萌 DX',
