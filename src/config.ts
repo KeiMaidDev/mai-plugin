@@ -8,10 +8,28 @@ import {
   LXNS_CALLBACK_PATH_PATTERN,
 } from './server/lxns-callback'
 
+export type LxnsOAuthMode = 'callback' | 'authorization-code'
+
+export interface LxnsOAuthCommonConfig {
+  enabled: boolean
+  mode: LxnsOAuthMode
+  clientId: string
+  clientSecret: string
+  tokenCipherKey: string
+}
+
+export interface LxnsOAuthCallbackConfig extends LxnsOAuthCommonConfig {
+  mode: 'callback'
+  callbackPath: string
+}
+
+export interface LxnsOAuthAuthorizationCodeConfig extends LxnsOAuthCommonConfig {
+  mode: 'authorization-code'
+}
+
+export type LxnsOAuthConfig = LxnsOAuthCallbackConfig | LxnsOAuthAuthorizationCodeConfig
+
 export interface Config {
-  developerTokens: {
-    lxns: string
-  }
   status: {
     enabled: boolean
     timeoutMs: number
@@ -22,14 +40,7 @@ export interface Config {
     clientId: string
     clientSecret: string
   }
-  oauth: {
-    enabled: boolean
-    authorizationUrl: string
-    callbackPath?: string
-    clientId: string
-    clientSecret: string
-    tokenCipherKey: string
-  }
+  lxnsOAuth: LxnsOAuthConfig
   resourceSync: {
     enabled: boolean
     intervalMinutes: number
@@ -53,27 +64,36 @@ export interface Config {
 const secret = () => Schema.string().role('secret').default('')
 
 export const ConfigSchema: Schema<Config> = Schema.object({
-  developerTokens: Schema.object({
-    lxns: secret().description('LXNS 开发者令牌，用于查询成绩并同步 LXNS 曲目与收藏品数据。'),
-  }).description('开发者令牌'),
   divingFishOAuth: Schema.object({
     clientId: secret().description('水鱼客户端 ID。'),
     clientSecret: secret().description('水鱼客户端密钥。'),
   }).description('水鱼 OAuth 设置'),
-  oauth: Schema.object({
-    enabled: Schema.boolean().default(false)
-      .description('是否启用 LXNS OAuth 用户授权和成绩同步。'),
-    authorizationUrl: Schema.string().default('')
-      .description('LXNS 开发者面板生成的完整 OAuth 授权链接'),
-    callbackPath: Schema.string()
-      .pattern(LXNS_CALLBACK_PATH_PATTERN)
-      .default(DEFAULT_LXNS_CALLBACK_PATH)
-      .description('LXNS OAuth 回调路径。'),
-    clientId: secret().description('LXNS OAuth 客户端 ID。'),
-    clientSecret: secret().description('LXNS OAuth 客户端密钥。'),
-    tokenCipherKey: secret()
-      .description('用于加密持久化 OAuth 令牌的密钥；启用 OAuth 时必须配置。'),
-  }).description('LXNS OAuth 设置'),
+  lxnsOAuth: Schema.intersect([
+    Schema.object({
+      enabled: Schema.boolean().default(false)
+        .description('是否启用 LXNS OAuth 用户授权和玩家数据读取。'),
+      mode: Schema.union([
+        Schema.const('callback').description('回调模式'),
+        Schema.const('authorization-code').description('授权码模式'),
+      ]).role('radio').default('callback').description('授权模式。'),
+      clientId: secret().description('LXNS OAuth 客户端 ID。'),
+      clientSecret: secret().description('LXNS OAuth 客户端密钥。'),
+      tokenCipherKey: secret()
+        .description('用于加密持久化 OAuth 令牌的密钥；启用 OAuth 时必须配置。'),
+    }).description('LXNS OAuth 设置'),
+    Schema.union([
+      Schema.object({
+        mode: Schema.const('callback').required(false),
+        callbackPath: Schema.string()
+          .pattern(LXNS_CALLBACK_PATH_PATTERN)
+          .default(DEFAULT_LXNS_CALLBACK_PATH)
+          .description('LXNS OAuth 回调路径。'),
+      }),
+      Schema.object({
+        mode: Schema.const('authorization-code').required(false),
+      }),
+    ]),
+  ]),
   resourceSync: Schema.object({
     enabled: Schema.boolean().default(true)
       .description('是否在启动时同步数据'),
@@ -109,7 +129,7 @@ export const ConfigSchema: Schema<Config> = Schema.object({
   ratingFooterText: Schema.string().default(DEFAULT_RATING_FOOTER_TEXT)
     .description('图片渲染共用的底部文字；留空仅显示底栏。'),
   publicBaseUrl: Schema.string().default('')
-    .description('插件回调路由可从公网访问的基础 URL；留空时使用 Koishi Server 的 selfUrl'),
+    .description('回调模式插件路由可从公网访问的基础 URL；留空时使用 Koishi Server 的 selfUrl，授权码模式可留空'),
   administrators: Schema.array(Schema.string()).default([])
     .description('管理员用户 ID'),
   compatibilityMode: Schema.boolean().default(false)
@@ -127,11 +147,11 @@ export const usage = `
 
 面向 Koishi 的舞萌 DX 功能插件，移植自[可怜BOT](https://github.com/xszqxszq/KarenBot) 的舞萌插件
 
-插件需要配置水鱼 OAuth 与LXNS 开发者令牌及 OAuth 配置。
+插件需要配置水鱼 OAuth 与 LXNS OAuth。
 
-使用LXNS OAuth 时，请确保 Koishi 回调地址可从公网访问。
+LXNS OAuth 支持“回调模式”和“授权码模式”。插件会根据客户端 ID、授权模式和回调地址自动生成授权链接；回调模式需要配置回调路径并确保 Koishi 回调地址可从公网访问，授权码模式无需回调路径或公网回调。
 
-申请LXNS OAuth客户端时，务必勾选“读取用户信息”与“读取玩家数据”权限，否则落雪查分器可能无法正常使用。
+申请 LXNS OAuth 客户端时，只需勾选“读取玩家信息、谱面成绩和历史成绩”（read_player）权限。玩家信息与成绩均通过用户 OAuth 读取，不需要开发者令牌、read_user_token 或 read_user_profile。
 
 水鱼 Oauth 申请指南：
 - 使用水鱼账号登陆 [开发者控制台](https://auth.diving-fish.com/console)

@@ -149,6 +149,7 @@ interface DefaultRuntimeState {
   commandRegistration?: CoreCommandRegistration
   commandDependencies?: CoreCommandDependencies | null
   servicesInitialized?: boolean
+  routesInitialized?: boolean
   routeRegistration?: { dispose(): void }
   debug?: DebugTracer
 }
@@ -177,7 +178,7 @@ export async function createDefaultCommandDependencies(
     publicBaseUrl: runtime.publicBaseUrl,
   })
   const data = await services.dataSync.startup()
-  const repositories = new MaiRepositories(ctx, runtime.config.oauth.tokenCipherKey)
+  const repositories = new MaiRepositories(ctx, runtime.config.lxnsOAuth.tokenCipherKey)
   await repositories.bind.retireImportTokens()
   const divingFishOAuth = new DivingFishOAuth(ctx, runtime.config.divingFishOAuth, repositories.bind, logger)
   const providers = {
@@ -279,7 +280,7 @@ export async function createDefaultCommandDependencies(
   }
   const updateService = new UpdateService({
     publicBaseUrl: runtime.publicBaseUrl,
-    oauth: runtime.config.oauth,
+    lxnsOAuth: runtime.config.lxnsOAuth,
     lxns: providers.lxns,
     divingFishOAuth,
     debug,
@@ -356,7 +357,6 @@ export function createDefaultLifecycle(
   const ensureDataSync = (runtime: LifecycleContext) => {
     state.dataSync ??= dependencies.createDataSync({
       config: runtime.config.resourceSync,
-      lxnsDeveloperToken: runtime.config.developerTokens.lxns,
       logger: ctx.logger(PLUGIN_NAME),
       debug: ensureDebug(runtime),
     })
@@ -410,26 +410,30 @@ export function createDefaultLifecycle(
       await ensureCommandDependencies(runtime)
     },
     async initializeRoutes(runtime) {
-      if (state.routeRegistration) return
+      if (state.routesInitialized) return
       const server = (ctx as Context & { server?: { all?: unknown } }).server
       if (typeof server?.all !== 'function') return
       const commandDependencies = await ensureCommandDependencies(runtime)
       if (!commandDependencies?.updateService) return
+      state.routesInitialized = true
+      if (!runtime.config.lxnsOAuth.enabled) return
+      const logger = ctx.logger(PLUGIN_NAME)
+      if (runtime.config.lxnsOAuth.mode === 'authorization-code') {
+        logger.info('LXNS OAuth 使用授权码模式。')
+        return
+      }
       state.routeRegistration = registerMaiServerRoutes(ctx, {
         service: commandDependencies.updateService,
-        lxnsCallbackPath: runtime.config.oauth.callbackPath,
+        lxnsCallbackPath: runtime.config.lxnsOAuth.callbackPath,
       })
-      if (runtime.config.oauth.enabled) {
-        const logger = ctx.logger(PLUGIN_NAME)
-        try {
-          logger.info(`LXNS OAuth 回调地址：${lxnsCallbackUrl(
-            runtime.publicBaseUrl,
-            runtime.config.oauth.callbackPath,
-          )}`)
-        } catch (error) {
-          if (!(error instanceof PublicCallbackUnavailableError)) throw error
-          logger.warn('LXNS OAuth 已启用，但未配置 publicBaseUrl 或 Koishi Server selfUrl。')
-        }
+      try {
+        logger.info(`LXNS OAuth 回调地址：${lxnsCallbackUrl(
+          runtime.publicBaseUrl,
+          runtime.config.lxnsOAuth.callbackPath,
+        )}`)
+      } catch (error) {
+        if (!(error instanceof PublicCallbackUnavailableError)) throw error
+        logger.warn(`LXNS OAuth 配置不完整：${error.message}`)
       }
     },
     async initializeCommands(runtime) {
@@ -453,6 +457,7 @@ export function createDefaultLifecycle(
           state.routeRegistration?.dispose()
         } finally {
           state.routeRegistration = undefined
+          state.routesInitialized = false
           try {
             updateService?.dispose()
             state.commandDependencies = undefined

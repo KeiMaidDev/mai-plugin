@@ -60,7 +60,6 @@ export interface DataSyncLogger {
 
 export interface MaimaiDataSyncOptions {
   config: Config['resourceSync']
-  lxnsDeveloperToken?: string
   fetch?: typeof fetch
   logger?: DataSyncLogger
   proberDataUrl?: string
@@ -294,8 +293,6 @@ export class MaimaiDataSyncService implements MaimaiAssetInvalidationSource {
   }
 
   private async syncLxnsSource() {
-    const token = this.options.lxnsDeveloperToken?.trim()
-    if (!token) throw new Error('LXNS developer token is unavailable')
     const staging = await this.cache.createStagingDirectory()
     try {
       const requests = [
@@ -310,7 +307,6 @@ export class MaimaiDataSyncService implements MaimaiAssetInvalidationSource {
           timeoutMs: this.options.config.timeoutMs,
           maxBytes: 32 * 1024 * 1024,
           validateUrl: this.validateRemoteUrl,
-          headers: { Authorization: token },
         },
       )))
       const [songs, icons, plates] = await Promise.all(requests.map(([filename]) => (

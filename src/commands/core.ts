@@ -8,8 +8,8 @@ import { registerQueueCommands } from './queue'
 import { registerRecordCommands } from './record'
 import { registerSettingsCommands } from './settings'
 import { registerStatusCommands } from './status'
-import { registerUpdateCommands } from './update'
-import type { CoreCommandDependencies } from './support'
+import { createUpdateSessionLocator, registerUpdateCommands } from './update'
+import type { ActiveCommandSession, CoreCommandDependencies } from './support'
 import { PLUGIN_NAME } from '../constants'
 import { createGuessPresenter } from '../platform/guess-message'
 import { parseComboQuery } from '../query/combo-parser'
@@ -55,11 +55,18 @@ const compatibilityPatterns = [
   /^设置(?:mai|b50)$/i,
   /^(?:默认|设为默认)$/,
   /^绑定水鱼$/,
-  /^绑定落雪$/,
+  /^绑定落雪(?:\s+.*)?$/,
   /^解绑落雪$/,
   /^解绑水鱼$/,
   /^有网吗$/,
 ] as const
+
+const lxnsAuthorizationCodePattern = /^[A-Za-z0-9]{2,}(?:-[A-Za-z0-9]{2,}){2,7}$/u
+
+export function extractLxnsAuthorizationCode(content: string) {
+  const normalized = content.trim()
+  return lxnsAuthorizationCodePattern.test(normalized) ? normalized : null
+}
 
 export function isExactCompatibilityCommand(content: string) {
   const normalized = content.trim()
@@ -106,7 +113,9 @@ export function resolveCompatibilityExecution(content: string) {
   if (/^今日舞萌$/.test(normalized)) return 'mai.daily'
   if (/^有网吗$/.test(normalized)) return 'mai.status'
   if (/^绑定水鱼$/.test(normalized)) return 'mai.bind-diving-fish'
-  if (/^绑定落雪$/.test(normalized)) return 'mai.bind-lxns'
+  if ((match = normalized.match(/^绑定落雪(?:\s+(.*))?$/))) {
+    return `mai.bind-lxns ${commandArgument(match[1] ?? '')}`
+  }
   if (/^解绑落雪$/.test(normalized)) return 'mai.unbind-lxns'
   if (/^解绑水鱼$/.test(normalized)) return 'mai.unbind-diving-fish'
   if (/^(?:设置水鱼|水鱼)$/.test(normalized)) return 'mai.provider diving-fish'
@@ -250,6 +259,23 @@ export function registerCoreCommands(
     ...regularCommands,
   ]
   const disposeCallbacks = ctx.on('interaction/button', dispatchQqCommandCallback)
+  const updateService = dependencies.updateService
+  const disposeLxnsCodeInput = updateService
+    ? ctx.middleware(async (session, next) => {
+        if (!session.userId || !session.channelId || !session.content) return next()
+        const code = extractLxnsAuthorizationCode(session.content)
+        if (!code || !updateService.hasPendingLxnsOAuthCode(session.userId)) return next()
+        await updateService.completeLxnsOAuthCode(
+          session.userId,
+          code,
+          createUpdateSessionLocator(session as ActiveCommandSession, {
+            ...dependencies,
+            updateService,
+          }),
+        )
+        return
+      }, true)
+    : undefined
   let disposed = false
 
   return {
@@ -258,6 +284,7 @@ export function registerCoreCommands(
       if (disposed) return
       disposed = true
       disposeCallbacks()
+      disposeLxnsCodeInput?.()
       for (const command of [...regularCommands].reverse()) command.dispose()
       await queueRegistration?.dispose()
       await guessRegistration?.dispose()

@@ -18,6 +18,7 @@ import {
 export type UpdateServicePort = Pick<
   UpdateService,
   | 'beginLxnsOAuth'
+  | 'completeLxnsOAuthCode'
   | 'beginDivingFishOAuth'
   | 'unbindLxns'
   | 'unbindDivingFish'
@@ -124,20 +125,41 @@ export function registerUpdateCommands(
   dependencies: UpdateCommandDependencies,
 ) {
   return [
-    ctx.command('mai.bind-lxns', '绑定落雪 OAuth')
+    ctx.command('mai.bind-lxns [code:string]', '绑定落雪 OAuth')
       .alias('mai.绑定落雪')
-      .action(commandAction(async ({ session }) => {
+      .action(commandAction(async ({ session }, code?: string) => {
         try {
-          const url = await dependencies.updateService.beginLxnsOAuth(
+          if (code?.trim()) {
+            await dependencies.updateService.completeLxnsOAuthCode(
+              session.userId,
+              code,
+              createUpdateSessionLocator(session, dependencies),
+            )
+            return
+          }
+          const authorization = await dependencies.updateService.beginLxnsOAuth(
             createUpdateSessionLocator(session, dependencies, ''),
           )
-          const text = `请点击下方按钮授权 BOT 访问您在落雪查分器的成绩。`
-          await replyText(session, dependencies, text, createQqUrlGuidance(text, {
-            id: 'lxns-oauth',
-            label: '前往落雪授权',
-            visitedLabel: '重新前往落雪授权',
-            url,
-          }))
+          const text = authorization.mode === 'authorization-code'
+            ? '请点击下方按钮授权 BOT 访问您在落雪查分器的成绩。授权成功后网页会显示一次性授权码，点击“填写授权码”后在输入框中粘贴并发送即可完成绑定。'
+            : '请点击下方按钮授权 BOT 访问您在落雪查分器的成绩。'
+          await replyText(session, dependencies, text, createQqUrlGuidance(
+            text,
+            {
+              id: 'lxns-oauth',
+              label: '前往落雪授权',
+              visitedLabel: '重新前往落雪授权',
+              url: authorization.url,
+            },
+            authorization.mode === 'authorization-code'
+              ? [{
+                  id: 'lxns-oauth-code',
+                  label: '填写授权码',
+                  inputHint: true,
+                  unsupportTips: '请直接发送网页显示的授权码。',
+                }]
+              : [],
+          ))
         } catch (error) {
           await updateFailure(session, dependencies, error, '/mai 绑定落雪')
         }

@@ -32,7 +32,9 @@
     },
     "service": {
       "required": [
-        "database",
+        "database"
+      ],
+      "optional": [
         "server"
       ]
     }

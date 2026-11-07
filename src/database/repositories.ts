@@ -7,7 +7,7 @@ import type {
   MaiOauthToken,
 } from './models'
 
-const TOKEN_CIPHER_ERROR = '[mai-plugin] OAuth token persistence requires config.oauth.tokenCipherKey.'
+const TOKEN_CIPHER_ERROR = '[mai-plugin] OAuth token persistence requires config.lxnsOAuth.tokenCipherKey.'
 const TOKEN_FRAME_VERSION = 'v1'
 const TOKEN_AAD = Buffer.from('mai-plugin:oauth-token:v1')
 

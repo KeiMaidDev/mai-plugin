@@ -1,6 +1,6 @@
 import type { MaimaiDataStore } from '../data/sync-service'
 import type { MaiRepositories } from '../database/repositories'
-import { ComboStatus, MusicGenre, MusicType, Rate, SyncStatus } from '../domain/enums'
+import { ComboStatus, MusicGenre, Rate, SyncStatus } from '../domain/enums'
 import { RecordEntry, type MusicInfo } from '../domain/music'
 import type { LXNSCollection, LXNSPlayer, LXNSScore } from '../domain/payloads'
 import { normalizeLxnsMusicId, toInternalAchievement } from '../domain/payloads'
@@ -12,6 +12,7 @@ import {
   ProviderMalformedPayloadError,
   ProviderNoDataError,
   ProviderOAuthRequiredError,
+  ProviderRateLimitError,
   providerResponseError,
 } from './errors'
 import {
@@ -160,16 +161,6 @@ function parseScores(value: unknown) {
   return value.map(parseScore)
 }
 
-function parseBests(value: unknown) {
-  if (!isObject(value) || !Array.isArray(value.standard) || !Array.isArray(value.dx)) {
-    throw new ProviderMalformedPayloadError('lxns', 'LXNS best-list payload is malformed.')
-  }
-  return {
-    standard: value.standard.map(parseScore),
-    dx: value.dx.map(parseScore),
-  }
-}
-
 function parseOAuthToken(value: unknown): LxnsOAuthToken {
   if (!isObject(value)
     || typeof value.access_token !== 'string'
@@ -202,10 +193,6 @@ export class LxnsProvider implements MaimaiProvider {
     this.http = new ProviderHttpClient(this.id, options.ctx, options.logger, options)
   }
 
-  private developerHeaders() {
-    return { Authorization: this.config.developerTokens.lxns }
-  }
-
   private async unwrap(response: { status: number; data: unknown }, noDataMessage?: string) {
     if (response.status < 200 || response.status >= 300) {
       throw providerResponseError(this.id, response.status, response.data)
@@ -230,10 +217,48 @@ export class LxnsProvider implements MaimaiProvider {
     return providerResponseError(this.id, status, body)
   }
 
-  private playerPath(user: UserQuery) {
-    return user.type === 'qq'
-      ? `${LXNS_ENDPOINTS.maimai}/player/qq/${encodeURIComponent(String(user.qq))}`
-      : `${LXNS_ENDPOINTS.maimai}/player/${encodeURIComponent(user.username)}`
+  private requireOAuthUserId(user: UserQuery) {
+    if (!user.isSelf || !user.userId) {
+      throw new ProviderOAuthRequiredError(
+        this.id,
+        'LXNS player data is only available through OAuth for the current user.',
+      )
+    }
+    return user.userId
+  }
+
+  private async oauthUserRequest(user: UserQuery, label: string, url: string) {
+    const userId = this.requireOAuthUserId(user)
+    const accessToken = await this.getOAuthAccessToken(userId)
+    const response = await this.http.json({
+      label,
+      method: 'GET',
+      url,
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+    if (response.status === 401) {
+      await this.repositories.oauth.remove(userId, 'lxns')
+      throw new ProviderOAuthRequiredError(this.id, 'LXNS OAuth authorization is no longer valid.', 401)
+    }
+    if (response.status === 429) throw new ProviderRateLimitError(this.id)
+    return this.unwrap(response)
+  }
+
+  private async getOAuthPlayer(user: UserQuery) {
+    return parsePlayer(await this.oauthUserRequest(
+      user,
+      'player-info',
+      `${LXNS_ENDPOINTS.user}/maimai/player`,
+    ))
+  }
+
+  private async getOAuthScores(user: UserQuery) {
+    const scores = await this.oauthUserRequest(
+      user,
+      'all-scores',
+      `${LXNS_ENDPOINTS.user}/maimai/player/scores`,
+    )
+    return parseScores(scores)
   }
 
   private playerInfo(player: LXNSPlayer) {
@@ -279,83 +304,58 @@ export class LxnsProvider implements MaimaiProvider {
   }
 
   async getPlayerInfo(user: UserQuery) {
-    const response = await this.http.json({
-      label: 'player-info',
-      method: 'GET',
-      url: this.playerPath(user),
-      headers: this.developerHeaders(),
-    })
-    return parsePlayer(await this.unwrap(response))
+    return this.getOAuthPlayer(user)
   }
 
   async getPlayerRating(user: UserQuery) {
-    const player = await this.getPlayerInfo(user)
-    const response = await this.http.json({
-      label: 'player-bests',
-      method: 'GET',
-      url: `${LXNS_ENDPOINTS.maimai}/player/${player.friend_code}/bests`,
-      headers: this.developerHeaders(),
-    })
-    const bests = parseBests(await this.unwrap(response))
+    const player = await this.getOAuthPlayer(user)
+    const records = this.normalizeScores(await this.getOAuthScores(user))
+      .sort((left, right) => right.rating - left.rating)
     return new RatingResponse(
       this.playerInfo(player),
       this.playerSettings(player),
-      this.normalizeScores(bests.standard),
-      this.normalizeScores(bests.dx),
+      records.filter(record => !record.music.isNew).slice(0, 35),
+      records.filter(record => record.music.isNew).slice(0, 15),
     )
   }
 
   async getPlayerRecord(user: UserQuery, music: MusicInfo) {
-    const player = await this.getPlayerInfo(user)
-    const songId = music.genre === MusicGenre.Utage || music.type === MusicType.Standard
-      ? music.id
-      : music.resourceId
-    const songType = music.genre === MusicGenre.Utage ? 'utage' : music.type.full
-    const response = await this.http.json({
-      label: 'single-best',
-      method: 'GET',
-      url: `${LXNS_ENDPOINTS.maimai}/player/${player.friend_code}/bests?song_id=${songId}&song_type=${songType}`,
-      headers: this.developerHeaders(),
-    })
-    return this.normalizeScores(parseScores(await this.unwrap(response)))
+    const records = this.normalizeScores(await this.getOAuthScores(user))
+    return records.filter(record => record.music.id === music.id)
   }
 
-  async getPlayerRecords(user: UserQuery, _musics: MusicInfo[]) {
-    if (!user.isSelf || !user.userId) {
-      throw new ProviderOAuthRequiredError(this.id, 'OAuth score access requires a self query with a local user id.')
-    }
-    const player = await this.getPlayerInfo(user)
-    const accessToken = await this.getOAuthAccessToken(user.userId)
-    const response = await this.http.json({
-      label: 'all-scores',
-      method: 'GET',
-      url: `${LXNS_ENDPOINTS.user}/maimai/player/scores`,
-      headers: { Authorization: `Bearer ${accessToken}` },
-    })
+  async getPlayerRecords(user: UserQuery, musics: MusicInfo[]) {
+    const player = await this.getOAuthPlayer(user)
+    const ids = new Set(musics.map(music => music.id))
+    const records = this.normalizeScores(await this.getOAuthScores(user))
+      .filter(record => ids.has(record.music.id))
     return new RecordsResponse(
       this.playerInfo(player),
       this.playerSettings(player),
-      this.normalizeScores(parseScores(await this.unwrap(response))),
+      records,
     )
   }
 
   async getPlayerRecent(user: UserQuery) {
-    const player = await this.getPlayerInfo(user)
-    const response = await this.http.json({
-      label: 'recent-scores',
-      method: 'GET',
-      url: `${LXNS_ENDPOINTS.maimai}/player/${player.friend_code}/recents`,
-      headers: this.developerHeaders(),
-    })
+    const player = await this.getOAuthPlayer(user)
+    const scores = (await this.getOAuthScores(user))
+      .map(score => ({
+        score,
+        time: Date.parse(score.last_played_time ?? score.play_time ?? score.upload_time ?? ''),
+      }))
+      .filter(entry => Number.isFinite(entry.time))
+      .sort((left, right) => right.time - left.time)
+      .slice(0, 50)
+      .map(entry => entry.score)
     return new RecordsResponse(
       this.playerInfo(player),
       this.playerSettings(player),
-      this.normalizeScores(parseScores(await this.unwrap(response))),
+      this.normalizeScores(scores),
     )
   }
 
   private async requestOAuthToken(data: Record<string, string>) {
-    if (!this.config.oauth.enabled) throw new ProviderOAuthRequiredError(this.id, 'LXNS OAuth is disabled.')
+    if (!this.config.lxnsOAuth.enabled) throw new ProviderOAuthRequiredError(this.id, 'LXNS OAuth is disabled.')
     const response = await this.http.json({
       label: 'oauth-token',
       method: 'POST',
@@ -389,10 +389,10 @@ export class LxnsProvider implements MaimaiProvider {
     })
   }
 
-  async exchangeOAuthCode(userId: string, code: string, redirectUri = this.config.publicBaseUrl) {
+  async exchangeOAuthCode(userId: string, code: string, redirectUri: string) {
     const token = await this.requestOAuthToken({
-      client_id: this.config.oauth.clientId,
-      client_secret: this.config.oauth.clientSecret,
+      client_id: this.config.lxnsOAuth.clientId,
+      client_secret: this.config.lxnsOAuth.clientSecret,
       grant_type: 'authorization_code',
       code,
       redirect_uri: redirectUri,
@@ -414,8 +414,8 @@ export class LxnsProvider implements MaimaiProvider {
     stored: { refreshToken: string },
   ) {
     const token = await this.requestOAuthToken({
-      client_id: this.config.oauth.clientId,
-      client_secret: this.config.oauth.clientSecret,
+      client_id: this.config.lxnsOAuth.clientId,
+      client_secret: this.config.lxnsOAuth.clientSecret,
       grant_type: 'refresh_token',
       refresh_token: stored.refreshToken,
     })

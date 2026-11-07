@@ -40,7 +40,14 @@ mai-plugin
 - 可用的 Koishi HTTP 服务，用于访问水鱼、落雪和静态资源源。
 - QQ 原生 Markdown 和按钮使用 [adapter-qq-crack](https://github.com/koishi-shangxue-plugins/koishi-plugin-adapter-qq-crack) 独有语法；不支持时可启用兼容模式。
 
-需要使用落雪 OAuth 时，请先配置 Koishi Server 的 `selfUrl`，或设置插件的 `publicBaseUrl`。
+落雪 OAuth 通过 `lxnsOAuth.mode` 选择授权模式：
+- `callback`：回调模式，需要配置回调路径及 Koishi Server 的 `selfUrl` 或插件的 `publicBaseUrl`；授权链接由插件自动生成，授权后自动完成绑定。
+- `authorization-code`：授权码模式，只配置客户端 ID、客户端密钥与令牌加密密钥；不提供回调路径配置，也不需要公网回调，授权链接由插件自动生成。
+
+落雪 OAuth 申请要点：
+- 在落雪开发者面板创建 OAuth 应用。
+- 权限只需选择“读取玩家信息、谱面成绩和历史成绩”（`read_player`），不需要开发者令牌、`read_user_token` 或 `read_user_profile`。
+- 若使用授权码模式，请勾选“无回调地址”；插件会按固定的 `redirect_uri=urn:ietf:wg:oauth:2.0:oob` 和 `scope=read_player` 自动生成授权链接。
 
 水鱼 Oauth 申请指南：
 - 使用水鱼账号登陆 [开发者控制台](https://auth.diving-fish.com/console)
@@ -84,7 +91,7 @@ mai-plugin
    /mai B50
    ```
 
-落雪绑定会跳转到 OAuth 授权页面。水鱼绑定会返回授权链接和用户码；玩家在网页确认后，BOT 会回复绑定结果。旧 Import-Token 绑定需重新授权，启动时会清理旧 Token 数据，但保留 QQ 与落雪绑定。`/mai 解绑水鱼` 只清除 BOT 的本地关联，远端授权可在[水鱼账号应用页](https://auth.diving-fish.com/apps)撤销。
+落雪回调模式会自动完成绑定；授权码模式会在授权成功后显示一次性授权码，玩家直接发送授权码即可完成绑定，也可以发送 `/mai 绑定落雪 <授权码>`。水鱼绑定会返回授权链接和用户码；玩家在网页确认后，BOT 会回复绑定结果。旧 Import-Token 绑定需重新授权，启动时会清理旧 Token 数据，但保留 QQ 与落雪绑定。`/mai 解绑水鱼` 只清除 BOT 的本地关联，远端授权可在[水鱼账号应用页](https://auth.diving-fish.com/apps)撤销。
 
 ## 常用命令
 
@@ -94,7 +101,7 @@ mai-plugin
 | QQ 绑定 | `/mai 绑定 <QQ 号>` |
 | 查分设置面板 | `/mai 查分设置`；别名 `/mai 设置mai`、`/mai 设置b50` |
 | 查分器选择 | `/mai 设置查分器`、`/mai 设置查分器 自动`、`/mai 设置查分器 水鱼`、`/mai 设置查分器 落雪` |
-| 查分器绑定 | `/mai 绑定落雪`、`/mai 解绑落雪`、`/mai 绑定水鱼`、`/mai 解绑水鱼` |
+| 查分器绑定 | `/mai 绑定落雪`、直接发送 `<授权码>`、`/mai 绑定落雪 <授权码>`、`/mai 解绑落雪`、`/mai 绑定水鱼`、`/mai 解绑水鱼` |
 | Rating 图片 | `/mai B15`、`/mai B25`、`/mai B35`、`/mai B40`、`/mai B50` |
 | 单曲成绩 | `/mai info <曲目>`、`/mai minfo <曲目>`、`/mai 紫谱成绩 <曲目>` |
 | 曲目查询 | `/mai id 123`、`/mai 查歌 <关键词>`、`/mai 随个`、`/mai 今日舞萌` |
@@ -109,15 +116,15 @@ mai-plugin
 
 查询自己但尚未绑定 QQ 时，插件会暂存原命令，并在绑定成功后自动继续查询。公开 B50 可按 QQ 或用户名查询；详细成绩要求目标玩家已授权本应用。QQ 查询若对应多个已授权账号，会要求澄清绑定。QQ 平台会提供相应的绑定按钮。
 
-## 回调与兼容模式
+## 落雪 OAuth 回调
 
 插件注册以下公网路由：
 
 | 路由 | 用途 |
 | --- | --- |
-| `GET <oauth.callbackPath>` | 接收落雪 OAuth 回调。 |
+| `GET <lxnsOAuth.callbackPath>` | 接收落雪 OAuth 回调。 |
 
-落雪 OAuth 的 redirect URI 为 `publicBaseUrl`（或 Koishi Server `selfUrl`）与 `oauth.callbackPath` 的组合。例如：
+回调模式下，落雪 OAuth 的 redirect URI 为 `publicBaseUrl`（或 Koishi Server `selfUrl`）与 `lxnsOAuth.callbackPath` 的组合。例如：
 
 ```text
 https://bot.example.com/mai-plugin/lxns/callback
@@ -125,7 +132,9 @@ https://bot.example.com/mai-plugin/lxns/callback
 
 控制台登记的 redirect URI 必须与插件最终生成的地址完全一致。
 
-OAuth 凭据和令牌属于敏感信息。请勿在聊天记录、工单或截图中公开；`oauth.tokenCipherKey` 更换前应先迁移或清理已有落雪 OAuth Token。
+授权码模式的 redirect URI 固定为 `urn:ietf:wg:oauth:2.0:oob`，插件不会注册或使用公网回调。
+
+OAuth 凭据和令牌属于敏感信息。请勿在聊天记录、工单或截图中公开；`lxnsOAuth.tokenCipherKey` 更换前应先迁移或清理已有落雪 OAuth Token。
 
 ## 服务器状态
 

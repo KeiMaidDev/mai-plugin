@@ -8,6 +8,7 @@ import {
   createQqButton,
   createQqButtonRow,
   createQqCommandAction,
+  createQqInputHintAction,
   createQqKeyboard,
   createQqNativeMarkdown,
   createQqUrlAction,
@@ -29,7 +30,11 @@ import type { StatusBannerLoader } from '../platform/status-message'
 import type { GuessService } from '../services/guess-service'
 import type { UpdateService } from '../services/update-service'
 import { PublicCallbackUnavailableError } from '../services/update-service'
-import { ProviderOAuthRequiredError } from '../providers/errors'
+import {
+  ProviderBindingRequiredError,
+  ProviderNoDataError,
+  ProviderOAuthRequiredError,
+} from '../providers/errors'
 import { mapQueryError, type FallbackElement } from '../platform/fallback-message'
 import type { Awaitable } from '../types'
 import type { Semaphore } from '../utils/semaphore'
@@ -85,6 +90,8 @@ export interface CoreCommandDependencies {
   updateService?: Pick<
     UpdateService,
     | 'beginLxnsOAuth'
+    | 'completeLxnsOAuthCode'
+    | 'hasPendingLxnsOAuthCode'
     | 'getBindingStatus'
     | 'unbindLxns'
     | 'unbindDivingFish'
@@ -143,6 +150,17 @@ export interface QqUrlGuidanceButton {
   unsupportTips?: string
 }
 
+export interface QqInputHintGuidanceButton {
+  id: string
+  label: string
+  visitedLabel?: string
+  style?: 0 | 1
+  unsupportTips?: string
+  inputHint: true
+}
+
+export type QqAdditionalGuidanceButton = QqCommandGuidanceButton | QqInputHintGuidanceButton
+
 export function createQqCommandGuidance(
   content: string,
   rows: readonly (readonly QqCommandGuidanceButton[])[],
@@ -161,8 +179,12 @@ export function createQqCommandGuidance(
   ))))
 }
 
-export function createQqUrlGuidance(content: string, button: QqUrlGuidanceButton) {
-  return createQqNativeMarkdown(content, createQqKeyboard([createQqButtonRow([
+export function createQqUrlGuidance(
+  content: string,
+  button: QqUrlGuidanceButton,
+  additionalButtons: readonly QqAdditionalGuidanceButton[] = [],
+) {
+  const buttons = [
     createQqButton(
       button.id,
       button.label,
@@ -172,7 +194,20 @@ export function createQqUrlGuidance(content: string, button: QqUrlGuidanceButton
       button.style,
       button.visitedLabel,
     ),
-  ])]))
+    ...additionalButtons.map(additional => createQqButton(
+      additional.id,
+      additional.label,
+      'inputHint' in additional
+        ? createQqInputHintAction({ unsupportTips: additional.unsupportTips })
+        : createQqCommandAction(additional.command, {
+            enter: additional.enter,
+            unsupportTips: additional.unsupportTips,
+          }),
+      additional.style,
+      additional.visitedLabel,
+    )),
+  ]
+  return createQqNativeMarkdown(content, createQqKeyboard([createQqButtonRow(buttons)]))
 }
 
 export type CoreCommandContext = Pick<Context, 'command'>
@@ -232,9 +267,28 @@ export async function replyQueryError(
   error: unknown,
   isSelf = true,
 ) {
+  if (isSelf && dependencies.updateService && (
+    error instanceof ProviderOAuthRequiredError
+    || error instanceof ProviderBindingRequiredError
+    || error instanceof ProviderNoDataError
+  )) {
+    try {
+      const bindings = await dependencies.updateService.getBindingStatus(session.userId)
+      if (!bindings.lxns && !bindings.divingFish) {
+        await replyProviderBindingPrompt(
+          session,
+          dependencies,
+          '您暂未绑定查分器，请绑定查分器后再试',
+        )
+        return
+      }
+    } catch {
+      // Fall through to the provider-specific error when binding status is unavailable.
+    }
+  }
   if (isSelf && error instanceof ProviderOAuthRequiredError && error.provider === 'lxns' && dependencies.updateService) {
     try {
-      const url = await dependencies.updateService.beginLxnsOAuth({
+      const authorization = await dependencies.updateService.beginLxnsOAuth({
         userId: session.userId,
         platform: session.platform,
         channelId: session.channelId,
@@ -262,17 +316,31 @@ export async function replyQueryError(
           }
         },
       })
-      const text = `使用该功能需要授权 BOT 访问您在落雪查分器的全部成绩。无法使用按钮时，请复制以下 HTTPS 链接打开：\n${url}`
+      const instruction = authorization.mode === 'authorization-code'
+        ? '授权成功后网页会显示一次性授权码，直接发送授权码即可完成绑定；点击“填写授权码”后在输入框中粘贴并发送即可。'
+        : '授权完成后会自动返回 BOT 继续本次查询。'
+      const text = `使用该功能需要授权 BOT 访问您在落雪查分器的全部成绩。${instruction}无法使用按钮时，请复制以下 HTTPS 链接打开：\n${authorization.url}`
       await replyText(
         session,
         dependencies,
         text,
-        createQqUrlGuidance(text, {
-          id: 'lxns-oauth',
-          label: '前往落雪授权',
-          visitedLabel: '重新前往落雪授权',
-          url,
-        }),
+        createQqUrlGuidance(
+          text,
+          {
+            id: 'lxns-oauth',
+            label: '前往落雪授权',
+            visitedLabel: '重新前往落雪授权',
+            url: authorization.url,
+          },
+          authorization.mode === 'authorization-code'
+            ? [{
+                id: 'lxns-oauth-code',
+                label: '填写授权码',
+                inputHint: true,
+                unsupportTips: '请直接发送网页显示的授权码。',
+              }]
+            : [],
+        ),
       )
       return
     } catch (oauthError) {
@@ -330,22 +398,7 @@ export async function replyQueryError(
     const text = message.code === 'no-data'
       ? '未查询到舞萌DX成绩，请先确认已绑定查分器并导入成绩。'
       : message.text
-    await replyText(session, dependencies, text, createQqCommandGuidance(text, [[
-      {
-        id: 'bind-lxns',
-        label: '绑定落雪',
-        command: '/mai 绑定落雪',
-        enter: true,
-        reply: false,
-      },
-      {
-        id: 'bind-diving-fish',
-        label: '绑定水鱼',
-        command: '/mai 绑定水鱼',
-        enter: true,
-        reply: false,
-      },
-    ]]))
+    await replyProviderBindingPrompt(session, dependencies, text)
     return
   }
   await replyText(session, dependencies, message.text, createQqCommandGuidance(message.text, [[{
@@ -355,6 +408,29 @@ export async function replyQueryError(
     enter: true,
     reply: false,
   }]]))
+}
+
+async function replyProviderBindingPrompt(
+  session: ActiveCommandSession,
+  dependencies: ReplyCommandDependencies,
+  text: string,
+) {
+  await replyText(session, dependencies, text, createQqCommandGuidance(text, [[
+    {
+      id: 'bind-lxns',
+      label: '绑定落雪',
+      command: '/mai 绑定落雪',
+      enter: true,
+      reply: false,
+    },
+    {
+      id: 'bind-diving-fish',
+      label: '绑定水鱼',
+      command: '/mai 绑定水鱼',
+      enter: true,
+      reply: false,
+    },
+  ]]))
 }
 
 export async function replyImage(
