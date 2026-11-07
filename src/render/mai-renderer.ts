@@ -47,29 +47,32 @@ export class TakumiMaiRenderer implements MaiRenderer {
   }
 
   async renderScore(input: ScoreRenderInput, signal?: AbortSignal): Promise<Buffer> {
-    const plan = await createScoreRenderPlan(input, this.renderService, this.data)
+    const plan = await createScoreRenderPlan(input, this.renderService, this.data, this.ratingFooterText)
     return this.renderService.render(plan.node, {
       width: plan.width,
       height: plan.height,
       format: 'png',
+      images: plan.images,
     }, signal)
   }
 
   async renderLevel(input: LevelRenderInput, signal?: AbortSignal): Promise<Buffer> {
-    const plan = await createLevelRenderPlan(input, this.renderService, this.data)
+    const plan = await createLevelRenderPlan(input, this.renderService, this.data, this.ratingFooterText)
     return this.renderService.render(plan.node, {
       width: plan.width,
       height: plan.height,
       format: 'png',
+      images: plan.images,
     }, signal)
   }
 
   async renderCourse(input: CourseRenderInput, signal?: AbortSignal): Promise<Buffer> {
-    const plan = await createCourseRenderPlan(input, this.renderService, this.data)
+    const plan = await createCourseRenderPlan(input, this.renderService, this.data, this.ratingFooterText)
     return this.renderService.render(plan.node, {
       width: plan.width,
       height: plan.height,
       format: 'png',
+      images: plan.images,
     }, signal)
   }
 

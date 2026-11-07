@@ -127,7 +127,7 @@ export const ConfigSchema: Schema<Config> = Schema.object({
       .description('状态响应的缓存时间，单位为毫秒；为 0 时不缓存'),
   }).description('服务器状态播报'),
   ratingFooterText: Schema.string().default(DEFAULT_RATING_FOOTER_TEXT)
-    .description('图片渲染共用的底部文字；留空仅显示底栏。'),
+    .description('四套图片（B15/B25/B35/B40/B50、成绩列表、歌50、单曲、定数表、段位）共用的底部文字；留空仅显示底栏。'),
   publicBaseUrl: Schema.string().default('')
     .description('回调模式插件路由可从公网访问的基础 URL；留空时使用 Koishi Server 的 selfUrl，授权码模式可留空'),
   administrators: Schema.array(Schema.string()).default([])

@@ -65,7 +65,7 @@ function countOf(value: number | undefined, fallback: number, name: string) {
 }
 
 function textAt(text: string, x: number, y: number, width: number, height: number, fontSize: number,
-  color: string, font: { family?: string; weight?: number; outline?: boolean } = {}) {
+  color: string, font: { family?: string; weight?: number; stroke?: number; shadow?: boolean } = {}) {
   return createTextNode({
     text,
     style: {
@@ -73,7 +73,8 @@ function textAt(text: string, x: number, y: number, width: number, height: numbe
       overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
       fontSize, fontWeight: font.weight ?? 700, fontFamily: font.family ?? MAIMAI_RENDER_THEME.fontFamily,
       lineHeight: 1.1, color,
-      ...(font.outline ? { textShadow: '1px 0 0 #ffffff, -1px 0 0 #ffffff, 0 1px 0 #ffffff, 0 -1px 0 #ffffff' } : {}),
+      ...(font.stroke ? { WebkitTextStroke: font.stroke + 'px #ffffff' } : {}),
+      ...(font.shadow ? { textShadow: 'rgba(0, 0, 0, 0.2) 1px 1px' } : {}),
     },
   })
 }
@@ -121,7 +122,7 @@ async function header(input: RatingRenderInput, title: string, rating: number, o
     ...staticNodes,
     textAt(input.player.nickname || 'maimai player', 178, 88, 181, 34, 27, '#24232d',
       { family: 'FZLanTingHei-B-GBK' }),
-    textAt(title, 170, 134, 281, 20, 14, '#444444', { outline: true }),
+    textAt(title, 170, 134, 281, 20, 14, '#444444', { family: '阿里巴巴普惠体-B', stroke: 2 }),
   ]
 }
 
@@ -145,9 +146,9 @@ async function card(record: RecordEntry | undefined, section: 'old' | 'new', ind
     children.push(
       imageAt(cover, 13, 10, 72, 72),
       ...status,
-      textAt(`#${index + 1} ${record.music.id}`, 91, 8, 82, 14, 10, '#ffffff'),
+      textAt(`#${index + 1} ${record.music.id}`, 91, 8, 82, 14, 10, '#ffffff', { family: '阿里巴巴普惠体-B' }),
       textAt(record.music.name, 91, 22, 137, 16, 12, '#ffffff',
-        { family: 'AlibabaPuHuiTi3,FZLanTingHei-B-GBK' }),
+        { family: "'阿里巴巴普惠体-B', '方正兰亭粗黑_GBK'" }),
       createContainerNode({
         style: {
           position: 'absolute', left: 90, top: 27, width: 139, height: 35,
@@ -164,7 +165,7 @@ async function card(record: RecordEntry | undefined, section: 'old' | 'new', ind
       }),
       textAt(`${record.chart.levelValue.toFixed(1)}→${record.rating}`, 90, 66, 59, 17, 10,
         MAIMAI_DIFFICULTY_COLORS[base as MaimaiDifficultyName] ?? MAIMAI_RENDER_THEME.colors.text,
-        { weight: 900, outline: true }),
+        { weight: 900, stroke: 2.5, shadow: true }),
     )
   }
   return createContainerNode({

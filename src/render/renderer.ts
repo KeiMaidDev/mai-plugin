@@ -4,10 +4,11 @@ import type { Node } from '@takumi-rs/helpers'
 import type { MaimaiAssetInvalidationSource } from '../data/sync-service'
 import { Semaphore, RENDER_QUEUE_FULL_MESSAGE } from '../utils/semaphore'
 import { RenderAssetCache, resolvePackageAssetPath } from './assets'
-import { MAIMAI_RENDER_THEME } from './theme'
 import type { DebugTracer } from '../utils/debug'
 
 const FZ_FONT_PATH = resolvePackageAssetPath('fonts/FZLanTingHei-B-GBK.ttf')
+const FZ_TEHEI_FONT_PATH = resolvePackageAssetPath('fonts/FZLanTingTeHei-GBK.ttf')
+const FZ_CUHEI_FONT_PATH = resolvePackageAssetPath('fonts/FZLanTingCuHei-GBK.ttf')
 const BOLD_FONT_PATH = resolvePackageAssetPath('fonts/AlibabaPuHuiTi-3-85-Bold.otf')
 const HEAVY_FONT_PATH = resolvePackageAssetPath('fonts/AlibabaPuHuiTi-3-105-Heavy.otf')
 
@@ -241,34 +242,26 @@ export class TakumiRenderService {
   }
 
   private async registerFonts() {
-    const [fz, bold, heavy] = await Promise.all([
+    const [fz, tehei, cuhei, bold, heavy] = await Promise.all([
       readFile(FZ_FONT_PATH),
+      readFile(FZ_TEHEI_FONT_PATH),
+      readFile(FZ_CUHEI_FONT_PATH),
       readFile(BOLD_FONT_PATH),
       readFile(HEAVY_FONT_PATH),
     ])
-    await this.renderer.registerFont({
-      name: MAIMAI_RENDER_THEME.fontFamily,
-      data: bold,
-      weight: 400,
-      style: 'normal',
-    })
-    await this.renderer.registerFont({
-      name: MAIMAI_RENDER_THEME.fontFamily,
-      data: bold,
-      weight: 700,
-      style: 'normal',
-    })
-    await this.renderer.registerFont({
-      name: MAIMAI_RENDER_THEME.fontFamily,
-      data: heavy,
-      weight: 900,
-      style: 'normal',
-    })
-    await this.renderer.registerFont({
-      name: 'FZLanTingHei-B-GBK',
-      data: fz,
-      weight: 700,
-      style: 'normal',
-    })
+    // KarenBot 以“字族名区分字重”，每个族在同一字形上注册 400/700/900，
+    // 使模板里任意 font-weight 都能命中同一张字体面。
+    const families = [
+      ['阿里巴巴普惠体-H', heavy],
+      ['阿里巴巴普惠体-B', bold],
+      ['FZLanTingHei-B-GBK', fz],
+      ['方正兰亭特黑_GBK', tehei],
+      ['方正兰亭粗黑_GBK', cuhei],
+    ] as const
+    for (const [name, data] of families) {
+      for (const weight of [400, 700, 900] as const) {
+        await this.renderer.registerFont({ name, data, weight, style: 'normal' })
+      }
+    }
   }
 }

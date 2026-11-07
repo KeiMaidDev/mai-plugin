@@ -9,7 +9,10 @@
     "assets/fallback",
     "assets/fonts",
     "assets/generated",
-    "assets/rating"
+    "assets/rating",
+    "assets/score",
+    "assets/level",
+    "assets/course"
   ],
   "homepage": "https://github.com/KeiMaidDev/koishi-plugin-mai-plugin#readme",
   "repository": {

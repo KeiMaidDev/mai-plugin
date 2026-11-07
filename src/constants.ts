@@ -1,6 +1,6 @@
 export const PLUGIN_NAME = 'mai-plugin'
 
-export const DEFAULT_RATING_FOOTER_TEXT = '样式参考可怜Bot | https://bot-docs.otmdb.cn'
+export const DEFAULT_RATING_FOOTER_TEXT = '可怜Bot 9.0 by 心水湛清 617 | https://karenbot.cn'
 
 /** Status source used by the server-status bulletin when the deployment configures nothing else. */
 export const DEFAULT_STATUS_SOURCE_BASE_URL = 'https://mai.chongxi.us'

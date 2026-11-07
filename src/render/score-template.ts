@@ -4,15 +4,15 @@ import { MusicDifficulty, Rate } from '../domain/enums'
 import type { ChartInfo, MusicInfo, RecordEntry } from '../domain/music'
 import { DeluxeScore } from '../domain/rating'
 import { resolvePackageAssetPath } from './assets'
+import { RenderImageCollector, type RenderImageSource } from './image-collector'
 import { createContainerNode, createImageNode, createTextNode } from './nodes'
-import {
-  MAIMAI_DIFFICULTY_COLORS,
-  type MaimaiDifficultyName,
-} from './rating-template'
+import { MAIMAI_DIFFICULTY_COLORS, type MaimaiDifficultyName } from './rating-template'
 import type { TakumiRenderService } from './renderer'
-import { MAIMAI_RENDER_THEME } from './theme'
 
-export const SCORE_TEMPLATE_SIZE = Object.freeze({ width: 1200, height: 1080 })
+export const SCORE_TEMPLATE_SIZE = Object.freeze({ width: 800, height: 800 })
+
+const FONT_H = '阿里巴巴普惠体-H'
+const FONT_H_FALLBACK = "'阿里巴巴普惠体-H', '方正兰亭特黑_GBK'"
 
 export interface ScoreRenderInput {
   music: MusicInfo
@@ -23,6 +23,7 @@ export interface ScoreRenderPlan {
   node: Node
   width: number
   height: number
+  images: RenderImageSource[]
 }
 
 const standardDifficulties = [
@@ -33,357 +34,227 @@ const standardDifficulties = [
   MusicDifficulty.ReMaster,
 ] as const
 
-const rateLabels: Record<string, string> = {
-  sssp: 'SSS+', sss: 'SSS', ssp: 'SS+', ss: 'SS', sp: 'S+', s: 'S',
-  aaa: 'AAA', aa: 'AA', a: 'A', bbb: 'BBB', bb: 'BB', b: 'B', c: 'C', d: 'D',
+function difficultyColor(name: string) {
+  return MAIMAI_DIFFICULTY_COLORS[name as MaimaiDifficultyName]
 }
 
-const comboLabels: Record<string, string> = {
-  none: '--', fc: 'FC', fcp: 'FC+', ap: 'AP', app: 'AP+',
+function scoreAsset(name: string) {
+  return resolvePackageAssetPath(`score/${name}.png`)
 }
 
-const syncLabels: Record<string, string> = {
-  none: '--', fs: 'FS', fsp: 'FS+', fsd: 'FSD', fsdp: 'FSD+', sync: 'SYNC',
+async function assetKey(
+  collector: RenderImageCollector,
+  service: TakumiRenderService,
+  name: string,
+) {
+  return collector.collect(service, scoreAsset(name))
 }
 
-function difficultyColor(difficulty: MusicDifficulty) {
-  return MAIMAI_DIFFICULTY_COLORS[difficulty.name as MaimaiDifficultyName]
+function coverKey(
+  collector: RenderImageCollector,
+  service: TakumiRenderService,
+  data: MaimaiDataStore,
+  resourceId: number,
+) {
+  return collector.collect(service, data.coverPath(resourceId), resolvePackageAssetPath('fallback/cover.png'))
 }
 
-function scoreBadge(text: string, backgroundColor: string) {
+/** Header (cover background + info) of a score image. */
+async function musicHeader(
+  collector: RenderImageCollector,
+  service: TakumiRenderService,
+  data: MaimaiDataStore,
+  music: MusicInfo,
+): Promise<Node> {
+  const [cover, infoBg, headerMask, coverMask, divider, type, genre, version] = await Promise.all([
+    coverKey(collector, service, data, music.resourceId),
+    assetKey(collector, service, 'info_bg'),
+    assetKey(collector, service, 'header_mask'),
+    assetKey(collector, service, 'cover_mask'),
+    assetKey(collector, service, 'divider'),
+    assetKey(collector, service, `type_${music.type.value}`),
+    assetKey(collector, service, `genre_${music.genre.id}`),
+    assetKey(collector, service, `version_${music.version.version}`),
+  ])
+
   return createContainerNode({
-    style: {
-      height: 28,
-      minWidth: 50,
-      paddingLeft: 9,
-      paddingRight: 9,
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      borderRadius: 3,
-      backgroundColor,
-      color: '#ffffff',
-      flexShrink: 0,
-    },
-    children: [createTextNode({ text, style: { fontSize: 13, fontWeight: 700 } })],
-  })
-}
-
-function missingDifficultyRow(difficulty: MusicDifficulty) {
-  const color = difficultyColor(difficulty)
-  return createContainerNode({
-    className: 'score-difficulty-row',
-    attributes: {
-      'data-difficulty': difficulty.name,
-      'data-empty': 'true',
-    },
-    style: {
-      width: '100%',
-      height: 198,
-      display: 'flex',
-      alignItems: 'center',
-      border: `1px dashed ${MAIMAI_RENDER_THEME.colors.line}`,
-      borderLeft: `10px solid ${color}`,
-      backgroundColor: '#eaf0f4',
-      color: MAIMAI_RENDER_THEME.colors.mutedText,
-      overflow: 'hidden',
-    },
-    children: [createTextNode({
-      text: `No ${difficulty.name} chart`,
-      style: { marginLeft: 26, fontSize: 21, fontWeight: 700 },
-    })],
-  })
-}
-
-function chartLabel(chart: ChartInfo) {
-  return `${chart.difficulty.name} ${chart.level} (${chart.levelValue.toFixed(1)})`
-}
-
-function difficultyRow(chart: ChartInfo, record: RecordEntry | undefined) {
-  const color = difficultyColor(chart.difficulty)
-  const stars = record ? DeluxeScore.stars(record.deluxeScore, chart.maxDeluxeScore) : 0
-  return createContainerNode({
-    className: 'score-difficulty-row',
-    attributes: {
-      'data-difficulty': chart.difficulty.name,
-      'data-empty': 'false',
-    },
-    style: {
-      width: '100%',
-      height: 198,
-      display: 'flex',
-      flexDirection: 'row',
-      alignItems: 'stretch',
-      border: `1px solid ${MAIMAI_RENDER_THEME.colors.line}`,
-      borderLeft: `10px solid ${color}`,
-      backgroundColor: MAIMAI_RENDER_THEME.colors.surface,
-      overflow: 'hidden',
-    },
+    id: 'header',
+    style: { width: 704, height: 227, backgroundImage: `url("${infoBg}")`, backgroundSize: 'cover', flexDirection: 'column' },
     children: [
       createContainerNode({
+        id: 'header-cover',
         style: {
-          width: 190,
-          paddingLeft: 16,
-          paddingRight: 16,
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'center',
-          flexShrink: 0,
+          width: 704,
+          height: 227,
+          padding: 26,
+          backgroundImage: `url("${cover}")`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          opacity: 0.15,
+          maskImage: `url("${headerMask}")`,
         },
         children: [
-          createContainerNode({
-            style: {
-              width: '100%',
-              height: 72,
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              backgroundColor: color,
-              color: '#ffffff',
-            },
-            children: [
-              createTextNode({
-                text: chart.difficulty.name.toUpperCase(),
-                style: { fontSize: 17, fontWeight: 700, lineHeight: 1.1 },
-              }),
-              createTextNode({
-                text: `${chart.level} · ${chart.levelValue.toFixed(1)}`,
-                style: { marginTop: 5, fontSize: 14, fontWeight: 700, lineHeight: 1 },
-              }),
-            ],
-          }),
-          createTextNode({
-            text: chart.notesDesigner || 'Unknown designer',
-            style: {
-              width: '100%',
-              height: 22,
-              marginTop: 10,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              textAlign: 'center',
-              fontSize: 12,
-              color: MAIMAI_RENDER_THEME.colors.mutedText,
-            },
-          }),
-        ],
-      }),
-      createContainerNode({
-        style: {
-          width: 290,
-          paddingLeft: 20,
-          paddingRight: 20,
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'center',
-          borderLeft: `1px solid ${MAIMAI_RENDER_THEME.colors.line}`,
-          flexShrink: 0,
-        },
-        children: record ? [
-          createTextNode({
-            text: Rate.toString(record.achievement),
-            style: { fontSize: 29, fontWeight: 700, color, lineHeight: 1.1 },
+          createImageNode({
+            id: 'cover',
+            src: cover,
+            width: 175,
+            height: 175,
+            style: { width: 175, height: 175, objectFit: 'fill', maskImage: `url("${coverMask}")`, flexShrink: 0 },
           }),
           createContainerNode({
-            style: { marginTop: 14, display: 'flex', flexDirection: 'row', gap: 7 },
+            id: 'right',
+            style: { height: 180, flexDirection: 'column', justifyContent: 'space-between', marginLeft: 20 },
             children: [
-              scoreBadge(rateLabels[record.rate] ?? record.rate.toUpperCase(), MAIMAI_RENDER_THEME.colors.darkSurface),
-              scoreBadge(comboLabels[record.comboStatus.value] ?? '--', '#c3486c'),
-              scoreBadge(syncLabels[record.syncStatus.value] ?? '--', '#4f6fc7'),
-            ],
-          }),
-          createTextNode({
-            text: `RATING ${record.rating}`,
-            style: { marginTop: 12, fontSize: 13, fontWeight: 700, color: MAIMAI_RENDER_THEME.colors.mutedText },
-          }),
-        ] : [
-          createTextNode({
-            text: 'Not played',
-            style: { fontSize: 22, fontWeight: 700, color: MAIMAI_RENDER_THEME.colors.mutedText },
-          }),
-        ],
-      }),
-      createContainerNode({
-        style: {
-          width: 254,
-          paddingLeft: 20,
-          paddingRight: 20,
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'center',
-          borderLeft: `1px solid ${MAIMAI_RENDER_THEME.colors.line}`,
-          overflow: 'hidden',
-        },
-        children: record ? [
-          createTextNode({
-            text: `DX ${record.deluxeScore}/${chart.maxDeluxeScore}`,
-            style: { fontSize: 19, fontWeight: 700, color: MAIMAI_RENDER_THEME.colors.text },
-          }),
-          createTextNode({
-            text: `DX STAR ${'★'.repeat(stars) || '--'}`,
-            style: { marginTop: 12, fontSize: 16, fontWeight: 700, color: '#9a621b' },
-          }),
-          createTextNode({
-            text: chartLabel(chart),
-            style: { marginTop: 12, fontSize: 12, color: MAIMAI_RENDER_THEME.colors.mutedText },
-          }),
-        ] : [
-          createTextNode({
-            text: `DX 0/${chart.maxDeluxeScore}`,
-            style: { fontSize: 19, color: MAIMAI_RENDER_THEME.colors.mutedText },
-          }),
-          createTextNode({
-            text: 'DX STAR --',
-            style: { marginTop: 12, fontSize: 16, color: MAIMAI_RENDER_THEME.colors.mutedText },
-          }),
-        ],
-      }),
-    ],
-  })
-}
-
-function musicMetadataRow(label: string, value: string) {
-  return createContainerNode({
-    style: {
-      width: '100%',
-      height: 52,
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      borderBottom: `1px solid ${MAIMAI_RENDER_THEME.colors.line}`,
-    },
-    children: [
-      createTextNode({
-        text: label,
-        style: { fontSize: 12, fontWeight: 700, color: MAIMAI_RENDER_THEME.colors.mutedText },
-      }),
-      createTextNode({
-        text: value,
-        style: {
-          width: 230,
-          height: 24,
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-          textAlign: 'right',
-          fontSize: 15,
-          fontWeight: 700,
-          color: MAIMAI_RENDER_THEME.colors.text,
-        },
-      }),
-    ],
-  })
-}
-
-function musicPanel(music: MusicInfo, cover: Buffer, utageIcon?: Buffer) {
-  return createContainerNode({
-    id: 'score-header',
-    style: {
-      width: 390,
-      height: 1032,
-      display: 'flex',
-      flexDirection: 'column',
-      border: `1px solid ${MAIMAI_RENDER_THEME.colors.line}`,
-      backgroundColor: MAIMAI_RENDER_THEME.colors.surface,
-      overflow: 'hidden',
-      flexShrink: 0,
-    },
-    children: [
-      createImageNode({
-        className: 'score-cover',
-        src: cover,
-        width: 388,
-        height: 388,
-        style: {
-          width: 388,
-          height: 388,
-          objectFit: 'cover',
-          flexShrink: 0,
-        },
-      }),
-      createContainerNode({
-        style: {
-          width: '100%',
-          height: 642,
-          padding: 24,
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-          borderTop: `8px solid ${MAIMAI_RENDER_THEME.colors.accent}`,
-        },
-        children: [
-          createContainerNode({
-            style: {
-              height: 36,
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-            },
-            children: [
-              createTextNode({
-                text: `ID ${music.id}`,
-                style: { fontSize: 15, fontWeight: 700, color: MAIMAI_RENDER_THEME.colors.mutedText },
+              createContainerNode({
+                id: 'top',
+                style: { flexDirection: 'row' },
+                children: [
+                  createImageNode({ id: 'type', src: type, style: { marginRight: 7 } }),
+                  createTextNode({ id: 'id', text: `ID ${music.id}`, style: { fontSize: 18, fontFamily: FONT_H, color: '#ffffff', marginTop: -1 } }),
+                ],
               }),
               createContainerNode({
-                style: { display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 10 },
+                id: 'title-container',
+                style: { justifyContent: 'center', flexDirection: 'column', height: 100, marginTop: -2 },
                 children: [
-                  ...(utageIcon ? [createImageNode({
-                    className: 'utage-icon',
-                    src: utageIcon,
-                    width: 36,
-                    height: 36,
-                    style: { width: 36, height: 36 },
-                  })] : []),
-                  scoreBadge(music.type.value, music.type.value === 'DX'
-                    ? MAIMAI_RENDER_THEME.colors.accent
-                    : '#536170'),
+                  createTextNode({
+                    id: 'title',
+                    text: music.name,
+                    style: { width: 457, fontSize: 46, fontFamily: FONT_H_FALLBACK, color: '#ffffff', textFit: 'shrink' },
+                  }),
+                  createTextNode({
+                    id: 'artist',
+                    text: music.artist,
+                    style: { fontSize: 18, fontFamily: FONT_H_FALLBACK, color: '#ffffff', marginTop: 8 },
+                  }),
+                ],
+              }),
+              createImageNode({ id: 'divider', src: divider, style: { alignSelf: 'flex-start' } }),
+              createContainerNode({
+                id: 'bottom',
+                style: { flexDirection: 'row', marginTop: 4 },
+                children: [
+                  createImageNode({ id: 'genre', src: genre, style: { marginRight: 8 } }),
+                  createImageNode({ id: 'version', src: version, style: { marginRight: 8 } }),
+                  createTextNode({ id: 'bpm', text: `BPM ${music.bpm}`, style: { fontSize: 18, fontFamily: FONT_H, color: '#ffffff', marginTop: 7 } }),
                 ],
               }),
             ],
           }),
+        ],
+      }),
+    ],
+  })
+}
+
+/** One difficulty row. */
+async function difficultyRow(
+  collector: RenderImageCollector,
+  service: TakumiRenderService,
+  chart: ChartInfo,
+  record: RecordEntry | undefined,
+): Promise<Node> {
+  const difficulty = chart.difficulty.name
+  const color = difficultyColor(difficulty)
+  const stars = record ? DeluxeScore.stars(record.deluxeScore, chart.maxDeluxeScore) : 0
+
+  const [base, levelBg, rank, combo, sync, dxstar, noteBg] = await Promise.all([
+    assetKey(collector, service, `base_${difficulty}`),
+    assetKey(collector, service, 'level_bg'),
+    assetKey(collector, service, `rank_${record?.rate ?? 'none'}`),
+    assetKey(collector, service, `icon_${record ? record.comboStatus.value : 'blank'}`),
+    assetKey(collector, service, `icon_${record ? record.syncStatus.value : 'blank'}`),
+    assetKey(collector, service, `icon_dxstar_${stars}`),
+    assetKey(collector, service, 'note_designer_bg'),
+  ])
+
+  return createContainerNode({
+    className: 'score-difficulty-row',
+    attributes: { 'data-difficulty': difficulty, 'data-empty': String(!record) },
+    style: {
+      width: 704,
+      height: 79,
+      backgroundImage: `url("${base}")`,
+      backgroundSize: 'cover',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      padding: '1px 22px 0 18px',
+      margin: '6px 0 0 2px',
+      flexShrink: 0,
+    },
+    children: [
+      createContainerNode({
+        style: {
+          width: 43,
+          height: 43,
+          backgroundImage: `url("${levelBg}")`,
+          backgroundSize: 'cover',
+          flexDirection: 'column',
+          justifyContent: 'center',
+          alignItems: 'center',
+          padding: '2px 1px 1px 1px',
+          flexShrink: 0,
+        },
+        children: [
+          createTextNode({ text: 'LV', style: { fontSize: 12, fontFamily: FONT_H, color, lineHeight: 1 } }),
           createTextNode({
-            text: music.name,
-            style: {
-              width: '100%',
-              maxHeight: 112,
-              marginTop: 20,
-              overflow: 'hidden',
-              fontSize: 34,
-              fontWeight: 700,
-              lineHeight: 1.18,
-              color: MAIMAI_RENDER_THEME.colors.text,
-            },
-          }),
-          createTextNode({
-            text: music.artist || 'Unknown artist',
-            style: {
-              width: '100%',
-              height: 32,
-              marginTop: 10,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              fontSize: 18,
-              color: MAIMAI_RENDER_THEME.colors.mutedText,
-            },
-          }),
-          createContainerNode({
-            style: {
-              width: '100%',
-              marginTop: 26,
-              display: 'flex',
-              flexDirection: 'column',
-              borderTop: `1px solid ${MAIMAI_RENDER_THEME.colors.line}`,
-            },
-            children: [
-              musicMetadataRow('ARTIST', music.artist || 'Unknown artist'),
-              musicMetadataRow('VERSION', music.version.name),
-              musicMetadataRow('GENRE', music.genre.genreName),
-              musicMetadataRow('BPM', String(music.bpm)),
-            ],
+            text: chart.levelValue !== 0 ? chart.levelValue.toFixed(1) : '-',
+            style: { fontSize: 18, fontFamily: FONT_H, color, marginTop: -4, lineHeight: 1 },
           }),
         ],
+      }),
+      createContainerNode({
+        style: { width: 140, justifyContent: 'flex-start', margin: '-1px 2px 0 -2px', flexShrink: 0 },
+        children: [
+          createTextNode({
+            text: record ? Rate.toString(record.achievement) : (chart.levelValue === 0 ? '无此难度' : '暂无记录'),
+            style: { fontSize: 24, fontFamily: FONT_H, color: '#ffffff', marginLeft: 12 },
+          }),
+        ],
+      }),
+      createContainerNode({
+        style: { width: 77, justifyContent: 'center', flexShrink: 0 },
+        children: [createImageNode({ src: rank, style: { flexShrink: 0 } })],
+      }),
+      createImageNode({ src: combo, style: { flexShrink: 0 } }),
+      createImageNode({ src: sync, style: { flexShrink: 0 } }),
+      createContainerNode({
+        style: { flexDirection: 'column', justifyContent: 'center', alignItems: 'center', marginRight: 3, flexShrink: 0 },
+        children: [
+          createTextNode({
+            text: record ? `${record.deluxeScore}/${chart.maxDeluxeScore}` : ' ',
+            style: { fontSize: 16, fontFamily: FONT_H, color: '#ffffff' },
+          }),
+          createImageNode({ src: dxstar, style: { flexShrink: 0 } }),
+        ],
+      }),
+      createContainerNode({
+        style: {
+          width: 194,
+          height: 42,
+          backgroundImage: `url("${noteBg}")`,
+          backgroundSize: 'cover',
+          flexDirection: 'column',
+          justifyContent: 'center',
+          alignItems: 'center',
+          flexShrink: 0,
+        },
+        children: [
+          createTextNode({ text: chart.notesDesigner, style: { fontSize: 12, fontFamily: FONT_H, color: '#ffffff', textAlign: 'center' } }),
+        ],
+      }),
+    ],
+  })
+}
+
+function scoreFooter(caption: string) {
+  return createContainerNode({
+    id: 'footer',
+    style: { justifyContent: 'center', backgroundColor: '#013162', padding: 12 },
+    children: [
+      createTextNode({
+        text: caption,
+        style: { fontSize: 22, fontFamily: FONT_H, color: '#ffffff', textShadow: '#000000 1px 1px' },
       }),
     ],
   })
@@ -393,61 +264,55 @@ export async function createScoreRenderPlan(
   input: ScoreRenderInput,
   renderService: TakumiRenderService,
   data: MaimaiDataStore,
+  footerText?: string,
 ): Promise<ScoreRenderPlan> {
-  const fallbackCover = resolvePackageAssetPath('fallback/cover.png')
-  const fallbackAvatar = resolvePackageAssetPath('fallback/avatar.png')
+  const collector = new RenderImageCollector()
+  const caption = (footerText ?? '').trim().replace(/\s+/gu, ' ')
+
+  const background = await assetKey(collector, renderService, 'background')
+  const header = await musicHeader(collector, renderService, data, input.music)
+
   const utageChart = input.music.charts.find(entry => entry.difficulty === MusicDifficulty.Utage)
-  const [cover, utageIcon] = await Promise.all([
-    renderService.loadAsset(data.coverPath(input.music.resourceId), fallbackCover),
-    utageChart
-      ? renderService.loadAsset(resolvePackageAssetPath('generated/utage-icon.png'), fallbackAvatar)
-      : Promise.resolve(undefined),
-  ])
-  const rows = utageChart
-    ? [difficultyRow(
-        utageChart,
-        input.records?.find(entry => entry.music.id === input.music.id
-          && entry.chart.difficulty === MusicDifficulty.Utage),
-      )]
-    : standardDifficulties.map(difficulty => {
-        const chart = input.music.charts.find(entry => entry.difficulty === difficulty)
-        if (!chart) return missingDifficultyRow(difficulty)
-        const record = input.records?.find(entry => entry.music.id === input.music.id
-          && entry.chart.difficulty === difficulty)
-        return difficultyRow(chart, record)
-      })
+  const rows: Node[] = []
+  if (utageChart) {
+    rows.push(await difficultyRow(
+      collector, renderService, utageChart,
+      input.records?.find(entry => entry.music.id === input.music.id && entry.chart.difficulty === MusicDifficulty.Utage),
+    ))
+  } else {
+    for (const difficulty of standardDifficulties) {
+      const chart = input.music.charts.find(entry => entry.difficulty === difficulty)
+      if (!chart) continue
+      const record = input.records?.find(entry => entry.music.id === input.music.id && entry.chart.difficulty === difficulty)
+      rows.push(await difficultyRow(collector, renderService, chart, record))
+    }
+    if (!input.music.charts.some(entry => entry.difficulty === MusicDifficulty.ReMaster)) {
+      rows.push(await difficultyRow(collector, renderService, input.music.fakeReMaster, undefined))
+    }
+  }
 
   return {
     width: SCORE_TEMPLATE_SIZE.width,
     height: SCORE_TEMPLATE_SIZE.height,
+    images: collector.images,
     node: createContainerNode({
       id: 'score-template',
       style: {
         width: SCORE_TEMPLATE_SIZE.width,
         height: SCORE_TEMPLATE_SIZE.height,
-        padding: 24,
+        backgroundImage: `url("${background}")`,
+        backgroundSize: 'cover',
+        flexDirection: 'column',
+        justifyContent: 'space-between',
         overflow: 'hidden',
-        display: 'flex',
-        flexDirection: 'row',
-        gap: 18,
-        backgroundColor: MAIMAI_RENDER_THEME.colors.background,
-        color: MAIMAI_RENDER_THEME.colors.text,
-        fontFamily: MAIMAI_RENDER_THEME.fontFamily,
       },
       children: [
-        musicPanel(input.music, cover, utageIcon),
         createContainerNode({
-          id: 'score-difficulty-list',
-          style: {
-            width: 744,
-            height: 1032,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 10,
-            overflow: 'hidden',
-          },
-          children: rows,
+          id: 'upper',
+          style: { width: 800, height: 745, flexDirection: 'column', alignItems: 'center', justifyContent: 'center' },
+          children: [header, ...rows],
         }),
+        scoreFooter(caption),
       ],
     }),
   }
