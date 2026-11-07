@@ -2,6 +2,8 @@ import type { Context } from 'koishi'
 import type { CoreCommandDependencies } from './support'
 import { commandAction, createQqCommandGuidance, replyText } from './support'
 
+const COMBO_DOCS_URL = 'http://docs.lowr.ink/docs/instruction/maimai/combo'
+
 const HELP_TEXT = [
   '## 舞萌 DX',
   '这是一个查询舞萌DX成绩及相关信息的功能。',
@@ -14,7 +16,11 @@ export function registerHelpCommand(
 ) {
   return ctx.command('mai', '舞萌 DX 命令帮助')
     .alias('/mai')
-    .action(commandAction(async ({ session }) => {
+    .action(commandAction(async ({ session, comboError }) => {
+      if (comboError) {
+        await replyText(session, dependencies, comboError)
+        return
+      }
       await replyText(session, dependencies, HELP_TEXT, createQqCommandGuidance(HELP_TEXT, [
         [
           {
@@ -25,11 +31,25 @@ export function registerHelpCommand(
             reply: false,
           },
           {
+            id: 'help-info',
+            label: '📋单曲成绩',
+            command: '/mai info',
+            enter: false,
+            reply: false,
+          },
+        ],
+        [
+          {
             id: 'help-rating',
             label: '💯Best50',
             command: '/mai b50',
             enter: true,
             reply: false,
+          },
+          {
+            id: 'help-combo',
+            label: '随心配50',
+            url: COMBO_DOCS_URL,
           },
         ],
         [

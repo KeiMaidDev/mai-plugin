@@ -14,6 +14,12 @@ import { PLUGIN_NAME } from '../constants'
 import { createGuessPresenter } from '../platform/guess-message'
 import { parseComboQuery } from '../query/combo-parser'
 import { resolveQqCommandCallbackData } from '../platform/qq-message'
+import {
+  registerComboFallback,
+  resolveComboCommand,
+  serializeComboCommand,
+  type ComboCommandExecution,
+} from './combo'
 
 export type { CoreCommandDependencies } from './support'
 
@@ -170,7 +176,26 @@ export function resolveCompatibilityExecution(content: string) {
   return null
 }
 
-export function resolvePendingCommandExecution(content: string) {
+function pendingComboInput(content: string, prefix: string) {
+  if (!prefix) return null
+  const normalized = content.trim()
+  if (!normalized.startsWith(prefix)) return null
+  const match = normalized.slice(prefix.length).match(/^mai(?:\s+|$)([\s\S]*)$/i)
+  return match?.[1] ?? null
+}
+
+function resolvePendingExecution(
+  content: string,
+  prefix: string,
+): string | ComboCommandExecution | null {
+  const comboInput = pendingComboInput(content, prefix)
+  if (comboInput !== null) {
+    const compatibility = resolveCompatibilityExecution(comboInput)
+    if (compatibility) return compatibility
+    const combo = resolveComboCommand(comboInput)
+    if (combo.type === 'command') return combo.execution
+  }
+
   const normalized = content.trim()
   const legacy = normalized.match(/^\/mai(?:\s+(.*))?$/i)
   if (legacy) {
@@ -178,6 +203,12 @@ export function resolvePendingCommandExecution(content: string) {
       ?? normalized.slice(1)
   }
   return resolveCompatibilityExecution(normalized)
+}
+
+export function resolvePendingCommandExecution(content: string) {
+  const execution = resolvePendingExecution(content, '/')
+  if (typeof execution === 'string' || !execution) return execution
+  return serializeComboCommand(execution)
 }
 
 export interface CoreCommandRegistration {
@@ -189,7 +220,7 @@ async function dispatchQqCommandCallback(session: Session) {
   const button = session.event.button as { data?: unknown } | undefined
   const command = resolveQqCommandCallbackData(button?.data)
   if (!command || !session.userId || !session.channelId) return
-  const execution = resolvePendingCommandExecution(command)
+  const execution = resolvePendingExecution(command, session.stripped.prefix ?? '')
   if (!execution) return
 
   session.content = command
@@ -205,7 +236,7 @@ export function registerCoreCommands(
     : {
         ...dependencies,
         replayCommand: async (session: Session, command: string) => {
-          const execution = resolvePendingCommandExecution(command)
+          const execution = resolvePendingExecution(command, session.stripped.prefix ?? '')
           if (execution) await session.execute(execution)
         },
       }
@@ -258,6 +289,7 @@ export function registerCoreCommands(
     ...(queueRegistration?.commands ?? []),
     ...regularCommands,
   ]
+  const disposeComboFallback = registerComboFallback(ctx)
   const disposeCallbacks = ctx.on('interaction/button', dispatchQqCommandCallback)
   const updateService = dependencies.updateService
   const disposeLxnsCodeInput = updateService
@@ -283,6 +315,7 @@ export function registerCoreCommands(
     async dispose() {
       if (disposed) return
       disposed = true
+      disposeComboFallback()
       disposeCallbacks()
       disposeLxnsCodeInput?.()
       for (const command of [...regularCommands].reverse()) command.dispose()

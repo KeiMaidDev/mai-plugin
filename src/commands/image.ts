@@ -164,9 +164,11 @@ function ratingRenderInput(
   }
 }
 
-function scoreListPageCommand(filter: string, page: number) {
+function scoreListPageCommand(commandPrefix: string, filter: string, page: number, target = '') {
   const normalized = filter.trim()
-  return `/mai 成绩列表${normalized ? ` ${normalized}` : ''} ${page}`
+  const filterArg = normalized ? JSON.stringify(normalized) : '""'
+  const targetArg = target.trim() ? ` ${JSON.stringify(target.trim())}` : ''
+  return `${commandPrefix}成绩列表 ${filterArg} ${page}${targetArg}`
 }
 
 function scoreListTitle(filter: string, page: number, totalPages: number) {
@@ -180,6 +182,8 @@ async function createScoreListPage(
   records: readonly RecordEntry[],
   filter: string,
   requestedPage: number,
+  target = '',
+  commandPrefix = '/',
 ) {
   const totalPages = Math.max(1, Math.ceil(records.length / SCORE_LIST_PAGE_SIZE))
   const currentPage = Math.min(Math.max(1, requestedPage), totalPages)
@@ -199,7 +203,7 @@ async function createScoreListPage(
   const row = createPagedCommandButtons({
     page: currentPage,
     totalPages,
-    pageCommand: page => scoreListPageCommand(filter, page),
+    pageCommand: page => scoreListPageCommand(commandPrefix, filter, page, target),
   })
   const keyboard = row.buttons.length ? createQqKeyboard([row]) : undefined
   return { image, elapsedMs, keyboard }
@@ -429,9 +433,9 @@ export function registerImageCommands(
       }
     })))
 
-  commands.push(ctx.command('mai.score-list [filter:string] [page:posint]', '生成成绩列表')
+  commands.push(ctx.command('mai.score-list [filter:string] [page:posint] [target:text]', '生成成绩列表')
     .alias('mai.分数列表', 'mai.分数表', 'mai.成绩列表', 'mai.成绩表')
-    .action(commandAction(async ({ session }, filterText = '', pageText = '') => {
+    .action(commandAction(async ({ session }, filterText = '', pageText = '', target = '') => {
       const page = pageText ? Number(pageText) : 1
       if (!Number.isSafeInteger(page) || page < 1) {
         await replyText(session, dependencies, '请输入正确的页数。')
@@ -444,7 +448,7 @@ export function registerImageCommands(
           await replyText(session, dependencies, '未找到符合条件的歌曲。')
           return
         }
-        const user = await dependencies.queryService.getQueryParams(querySession(session))
+        const user = await dependencies.queryService.getQueryParams(querySession(session), target)
         isSelf = user.isSelf !== false
         const musics = selected.musics.length
           ? selected.musics
@@ -455,6 +459,7 @@ export function registerImageCommands(
           await replyText(session, dependencies, '当前条件下没有成绩。')
           return
         }
+        const commandPrefix = session.stripped.prefix ?? '/'
         const rendered = await createScoreListPage(
           dependencies,
           response,
@@ -462,6 +467,8 @@ export function registerImageCommands(
           records,
           filterText,
           page,
+          target,
+          commandPrefix,
         )
         await replyQueryResultImage(session, dependencies, {
           image: rendered.image,
@@ -490,8 +497,9 @@ export function registerImageCommands(
     })))
 
   commands.push(ctx.command('mai.complete-table [filter:text]', '生成完成表或进度表')
+    .option('target', '-t <target:text> 查询对象')
     .alias('mai.完成表', 'mai.进度表')
-    .action(commandAction(async ({ session }, filterText = '') => {
+    .action(commandAction(async ({ session, options }, filterText = '') => {
       const selected = filtersAndCharts(dependencies, filterText)
       if (!selected?.charts.length) {
         await replyText(session, dependencies, '未找到符合条件的谱面。')
@@ -499,7 +507,7 @@ export function registerImageCommands(
       }
       let isSelf = true
       try {
-        const user = await dependencies.queryService.getQueryParams(querySession(session))
+        const user = await dependencies.queryService.getQueryParams(querySession(session), options.target)
         isSelf = user.isSelf !== false
         const { response } = await dependencies.queryService.records(user, selected.musics)
         const matched = filterRecords(selected.filters, response.records, true)
@@ -520,8 +528,9 @@ export function registerImageCommands(
     })))
 
   commands.push(ctx.command('mai.incomplete-table [filter:text]', '生成未完成表')
+    .option('target', '-t <target:text> 查询对象')
     .alias('mai.未完成表', 'mai.未完成列表')
-    .action(commandAction(async ({ session }, filterText = '') => {
+    .action(commandAction(async ({ session, options }, filterText = '') => {
       const selected = filtersAndCharts(dependencies, filterText)
       if (!selected?.charts.length) {
         await replyText(session, dependencies, '未找到符合条件的谱面。')
@@ -529,7 +538,7 @@ export function registerImageCommands(
       }
       let isSelf = true
       try {
-        const user = await dependencies.queryService.getQueryParams(querySession(session))
+        const user = await dependencies.queryService.getQueryParams(querySession(session), options.target)
         isSelf = user.isSelf !== false
         const { response } = await dependencies.queryService.records(user, selected.musics)
         const matched = filterRecords(selected.filters, response.records, true)

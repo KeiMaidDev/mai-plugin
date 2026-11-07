@@ -160,22 +160,32 @@ export interface QqInputHintGuidanceButton {
 }
 
 export type QqAdditionalGuidanceButton = QqCommandGuidanceButton | QqInputHintGuidanceButton
+export type QqGuidanceButton = QqCommandGuidanceButton | QqUrlGuidanceButton | QqInputHintGuidanceButton
+
+function createGuidanceButton(button: QqGuidanceButton) {
+  const action = 'inputHint' in button
+    ? createQqInputHintAction({ unsupportTips: button.unsupportTips })
+    : 'url' in button
+      ? createQqUrlAction(button.url, { unsupportTips: button.unsupportTips })
+      : createQqCommandAction(button.command, {
+          enter: button.enter,
+          unsupportTips: button.unsupportTips,
+        })
+  return createQqButton(
+    button.id,
+    button.label,
+    action,
+    button.style,
+    button.visitedLabel,
+  )
+}
 
 export function createQqCommandGuidance(
   content: string,
-  rows: readonly (readonly QqCommandGuidanceButton[])[],
+  rows: readonly (readonly QqGuidanceButton[])[],
 ) {
   return createQqNativeMarkdown(content, createQqKeyboard(rows.map(row => (
-    createQqButtonRow(row.map(button => createQqButton(
-      button.id,
-      button.label,
-      createQqCommandAction(button.command, {
-        enter: button.enter,
-        unsupportTips: button.unsupportTips,
-      }),
-      button.style,
-      button.visitedLabel,
-    )))
+    createQqButtonRow(row.map(createGuidanceButton))
   ))))
 }
 
@@ -194,18 +204,7 @@ export function createQqUrlGuidance(
       button.style,
       button.visitedLabel,
     ),
-    ...additionalButtons.map(additional => createQqButton(
-      additional.id,
-      additional.label,
-      'inputHint' in additional
-        ? createQqInputHintAction({ unsupportTips: additional.unsupportTips })
-        : createQqCommandAction(additional.command, {
-            enter: additional.enter,
-            unsupportTips: additional.unsupportTips,
-          }),
-      additional.style,
-      additional.visitedLabel,
-    )),
+    ...additionalButtons.map(createGuidanceButton),
   ]
   return createQqNativeMarkdown(content, createQqKeyboard([createQqButtonRow(buttons)]))
 }
@@ -221,6 +220,7 @@ export type ActiveCommandSession = Session & {
 interface ActiveCommandArgv {
   session: ActiveCommandSession
   options: Record<string, any>
+  comboError?: string
 }
 
 export function commandAction(
