@@ -149,9 +149,11 @@ export const usage = `
 
 插件需要配置水鱼 OAuth 与 LXNS OAuth。
 
-LXNS OAuth 支持“回调模式”和“授权码模式”。插件会根据客户端 ID、授权模式和回调地址自动生成授权链接；回调模式需要配置回调路径并确保 Koishi 回调地址可从公网访问，授权码模式无需回调路径或公网回调。
+LXNS OAuth 已支持“授权码模式”！该模式无需公网也可绑定落雪查分器啦～
 
-申请 LXNS OAuth 客户端时，只需勾选“读取玩家信息、谱面成绩和历史成绩”（read_player）权限。玩家信息与成绩均通过用户 OAuth 读取，不需要开发者令牌、read_user_token 或 read_user_profile。
+回调模式请确保 koishi 服务可以从公网访问，授权码模式需在申请Oauth应用时勾选“无回调地址”，插件会自动生成授权链接～
+
+申请 LXNS OAuth 客户端时，只需勾选读取用户信息与读取玩家数据权限。
 
 水鱼 Oauth 申请指南：
 - 使用水鱼账号登陆 [开发者控制台](https://auth.diving-fish.com/console)
@@ -163,5 +165,4 @@ LXNS OAuth 支持“回调模式”和“授权码模式”。插件会根据客
 - 点击提交，耐心等待审核完成
 - 审核通过后，点击生成client_secret，clint_id在申请完成后仅会显示一次，请务必妥善保管
 - 将申请到的client_secret与client_id填入对应的配置中，即可完成水鱼查分器配置
-
 `.trim()
