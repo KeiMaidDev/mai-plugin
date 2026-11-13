@@ -1,6 +1,6 @@
 # koishi-plugin-mai-plugin
 
-[![npm](https://img.shields.io/npm/v/koishi-plugin-mai-plugin?style=flat-square)](https://www.npmjs.com/package/koishi-plugin-mai-plugin) [![npm downloads](https://img.shields.io/npm/dm/koishi-plugin-mai-plugin)](https://www.npmjs.com/package/koishi-plugin-mai-plugin)
+[![npm](https://img.shields.io/npm/v/koishi-plugin-mai-plugin?style=flat-square)](https://www.npmjs.com/package/koishi-plugin-mai-plugin) ![NPM Downloads](https://img.shields.io/npm/dm/koishi-plugin-mai-plugin?style=flat)
 
 > [!NOTE]
 > 本项目由各种AI工具开发，存在一定的问题，见谅，如有更好的实现欢迎 PR<br>
